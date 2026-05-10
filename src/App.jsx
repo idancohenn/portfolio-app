@@ -35,6 +35,46 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'portfolio-tracker-pr
 const apiKey = "AIzaSyDyHv0arWlmi0IlAoA4t5XFS_3yWjOE6ak";
 const hasEmbeddedAuthToken = typeof __initial_auth_token !== 'undefined' && __initial_auth_token;
 const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+function authorizedDomainsHint() {
+  if (typeof window === 'undefined') return '';
+  const host = window.location.hostname;
+  return ` הוסף ב-Firebase את הדומיין "${host}" תחת Authentication → Settings → Authorized domains (ובנוסף את כל תתי-הדומיין של Vercel אם צריך).`;
+}
+
+/** User-facing Hebrew message; returns null when the UI should stay silent (user cancelled). */
+function formatGoogleLinkError(err) {
+  const code = err?.code;
+  const hint = authorizedDomainsHint();
+  if (code === 'auth/popup-closed-by-user') return null;
+  if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
+    return null;
+  }
+  if (!code) {
+    const detail = err?.message ? ` פרטים: ${String(err.message).slice(0, 180)}` : '';
+    return `שגיאה בהתחברות ל-Google.${detail}${hint}`;
+  }
+  if (code === 'auth/credential-already-in-use') {
+    return 'חשבון Google זה כבר מקושר למשתמש אחר. נסה עם חשבון אחר.';
+  }
+  if (code === 'auth/unauthorized-domain') {
+    return `הדומיין של האתר לא מאושר ב-Firebase.${hint}`;
+  }
+  if (code === 'auth/operation-not-allowed') {
+    return 'התחברות Google לא הופעלה בפרויקט. ב-Firebase: Authentication → Sign-in method → Google → Enable.';
+  }
+  if (code === 'auth/network-request-failed') {
+    return 'בעיית רשת. בדוק חיבור לאינטרנט ונסה שוב.';
+  }
+  if (code === 'auth/web-storage-unsupported' || code === 'auth/storage-error') {
+    return 'הדפדפן חוסם אחסון נדרש להתחברות. נסה דפדפן אחר או כבה מצב פרטי.';
+  }
+  if (code === 'auth/internal-error') {
+    return `שגיאה פנימית ב-Firebase בהתחברות ל-Google. נסה שוב בעוד רגע, או נסה התחברות בחלון פרטי.${hint}`;
+  }
+  return `שגיאה בהתחברות (${code}).${hint}`;
+}
 
 const App = () => {
   const [user, setUser] = useState(null);
@@ -77,12 +117,9 @@ const App = () => {
         try {
           await getRedirectResult(auth);
         } catch (redirectErr) {
-          console.warn('getRedirectResult', redirectErr);
-          if (redirectErr?.code === 'auth/credential-already-in-use') {
-            setError('חשבון Google זה כבר מקושר למשתמש אחר. נסה עם חשבון אחר או פנה לתמיכה.');
-          } else if (redirectErr?.code && redirectErr.code !== 'auth/popup-closed-by-user') {
-            setError('שגיאה בהשלמת ההתחברות ל-Google');
-          }
+          console.error('getRedirectResult', redirectErr?.code, redirectErr);
+          const msg = formatGoogleLinkError(redirectErr);
+          if (msg) setError(msg);
         }
 
         if (hasEmbeddedAuthToken) {
@@ -114,21 +151,37 @@ const App = () => {
     if (!user?.isAnonymous) return;
     setLinkGoogleLoading(true);
     setError(null);
+    const narrow =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(max-width: 640px)').matches;
+    // Popups often fail on production (COOP, blockers). Use full-page redirect off localhost.
+    const isLocalDev =
+      typeof window !== 'undefined' &&
+      /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+    const useRedirectFlow = narrow || !isLocalDev;
     try {
-      const narrow =
-        typeof window !== 'undefined' &&
-        window.matchMedia('(max-width: 640px)').matches;
-      if (narrow) {
+      if (useRedirectFlow) {
         await linkWithRedirect(auth, googleProvider);
-      } else {
+        return;
+      }
+      try {
         await linkWithPopup(auth, googleProvider);
+      } catch (popupErr) {
+        console.error('linkWithPopup', popupErr?.code, popupErr);
+        if (
+          popupErr?.code === 'auth/popup-blocked' ||
+          popupErr?.code === 'auth/cancelled-popup-request'
+        ) {
+          await linkWithRedirect(auth, googleProvider);
+          return;
+        }
+        const msg = formatGoogleLinkError(popupErr);
+        if (msg) setError(msg);
       }
     } catch (e) {
-      if (e?.code === 'auth/credential-already-in-use') {
-        setError('חשבון Google זה כבר מקושר למשתמש אחר. נסה עם חשבון אחר.');
-      } else if (e?.code !== 'auth/popup-closed-by-user') {
-        setError('שגיאה בהתחברות ל-Google');
-      }
+      console.error('handleLinkGoogle', e?.code, e);
+      const msg = formatGoogleLinkError(e);
+      if (msg) setError(msg);
     } finally {
       setLinkGoogleLoading(false);
     }
