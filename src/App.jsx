@@ -2,13 +2,17 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth,
+  initializeAuth,
   signInAnonymously,
   signInWithCustomToken,
   onAuthStateChanged,
   GoogleAuthProvider,
   linkWithPopup,
   linkWithRedirect,
-  getRedirectResult
+  getRedirectResult,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  browserCookiePersistence
 } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import {
@@ -29,7 +33,26 @@ const firebaseConfig = {
   appId: "1:213503174907:web:6f9466a33db39ec968a85e"
 };
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+
+/** Redirect sign-in on non-firebaseapp.com hosts needs cookie persistence (Chrome/Safari third-party storage rules). */
+function getOrCreateAuth() {
+  try {
+    return initializeAuth(app, {
+      persistence: [
+        indexedDBLocalPersistence,
+        browserLocalPersistence,
+        browserCookiePersistence
+      ]
+    });
+  } catch (e) {
+    if (e?.code === 'auth/already-initialized') {
+      return getAuth(app);
+    }
+    throw e;
+  }
+}
+
+const auth = getOrCreateAuth();
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'portfolio-tracker-pro-v3';
 const apiKey = "AIzaSyDyHv0arWlmi0IlAoA4t5XFS_3yWjOE6ak";
@@ -110,12 +133,17 @@ const App = () => {
   const sectors = ['שבבים', 'תוכנה', 'סייבר', 'פינטק', 'מדדים', 'אנרגיה', 'דאטה סנטרים', 'ביומד', 'פיננסים', 'אחר'];
   const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
-  // 1. Init & Fetch Exchange Rate
+  // 1. Init & Fetch Exchange Rate — finish redirect + sign-in before subscribing (avoids flash / wrong anonymous state)
   useEffect(() => {
+    let unsubscribe = () => {};
     const initApp = async () => {
       try {
+        await auth.authStateReady();
         try {
-          await getRedirectResult(auth);
+          const cred = await getRedirectResult(auth);
+          if (cred?.user && !cred.user.isAnonymous) {
+            console.info('Firebase: Google account linked after redirect');
+          }
         } catch (redirectErr) {
           console.error('getRedirectResult', redirectErr?.code, redirectErr);
           const msg = formatGoogleLinkError(redirectErr);
@@ -141,9 +169,9 @@ const App = () => {
       } catch {
         setError("שגיאה בהתחברות");
       }
+      unsubscribe = onAuthStateChanged(auth, setUser);
     };
     initApp();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
@@ -153,23 +181,15 @@ const App = () => {
     if (!currentUser?.isAnonymous) return;
     setLinkGoogleLoading(true);
     setError(null);
-    const narrow =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(max-width: 640px)').matches;
-    // Popups often fail on production (COOP, blockers). Use full-page redirect off localhost.
-    const isLocalDev =
-      typeof window !== 'undefined' &&
-      /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
-    const useRedirectFlow = narrow || !isLocalDev;
     try {
-      if (useRedirectFlow) {
-        await linkWithRedirect(currentUser, googleProvider);
-        return;
-      }
+      // On Vercel/custom domains, redirect often fails silently (partitioned storage). Prefer popup; redirect only if blocked.
       try {
         await linkWithPopup(currentUser, googleProvider);
       } catch (popupErr) {
         console.error('linkWithPopup', popupErr?.code, popupErr);
+        if (popupErr?.code === 'auth/popup-closed-by-user') {
+          return;
+        }
         if (
           popupErr?.code === 'auth/popup-blocked' ||
           popupErr?.code === 'auth/cancelled-popup-request'
