@@ -11,8 +11,7 @@ import {
   linkWithRedirect,
   getRedirectResult,
   indexedDBLocalPersistence,
-  browserLocalPersistence,
-  browserCookiePersistence
+  browserLocalPersistence
 } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import {
@@ -34,15 +33,11 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig);
 
-/** Redirect sign-in on non-firebaseapp.com hosts needs cookie persistence (Chrome/Safari third-party storage rules). */
+/** IndexedDB + localStorage persistence (avoids Rolldown missing-export on firebase/auth barrel). */
 function getOrCreateAuth() {
   try {
     return initializeAuth(app, {
-      persistence: [
-        indexedDBLocalPersistence,
-        browserLocalPersistence,
-        browserCookiePersistence
-      ]
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence]
     });
   } catch (e) {
     if (e?.code === 'auth/already-initialized') {
