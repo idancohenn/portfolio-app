@@ -291,7 +291,8 @@ const App = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          systemInstruction: { parts: [{ text: systemInstruction }] }
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          generationConfig: { responseMimeType: "application/json" }
         })
       });
       const result = await response.json();
@@ -301,7 +302,13 @@ const App = () => {
       rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
 
       const parsedData = JSON.parse(rawText);
-      setAiData(parsedData);
+      setAiData({
+        overview: parsedData.overview || "לא התקבל מידע ברור מהמערכת.",
+        riskLevel: parsedData.riskLevel || "לא ידוע",
+        atRisk: Array.isArray(parsedData.atRisk) ? parsedData.atRisk : [],
+        toIncrease: Array.isArray(parsedData.toIncrease) ? parsedData.toIncrease : [],
+        recommendations: Array.isArray(parsedData.recommendations) ? parsedData.recommendations : []
+      });
     } catch (err) {
       console.error(err);
       setError("שגיאה בקבלת תובנות AI או בפענוח הנתונים. נסה שוב.");
@@ -524,7 +531,8 @@ const App = () => {
                   const totalChangePct = priceForCalc > 0 ? ((currentPrice - priceForCalc) / priceForCalc) * 100 : 0;
                   const isProfit = totalChangePct >= 0;
                   const symbolCurrency = h.currency === 'USD' ? '$' : '₪';
-                  const totalValue = h.quantity * currentPrice;
+                  const totalValueCurrency = h.quantity * currentPrice;
+                  const totalValueILS = h.currency === 'USD' ? totalValueCurrency * usdRate : totalValueCurrency;
                   const isExpanded = expandedHoldingId === h.id;
 
                   return (
@@ -563,11 +571,18 @@ const App = () => {
                         {/* Left: Total Value & Profit */}
                         <div className="flex flex-col items-end min-w-[4rem]">
                            <span className="font-black text-slate-900 text-sm leading-tight">
-                             {symbolCurrency}{totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                             ₪{totalValueILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                            </span>
-                           <span className={`text-[9px] font-bold px-1 py-0.5 rounded mt-0.5 ${isProfit ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`} dir="ltr">
-                              {isProfit ? '+' : ''}{totalChangePct.toFixed(1)}%
-                           </span>
+                           <div className="flex items-center gap-1 mt-0.5">
+                             {h.currency === 'USD' && (
+                               <span className="text-[9px] font-bold text-slate-400">
+                                 ${totalValueCurrency.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                               </span>
+                             )}
+                             <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${isProfit ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`} dir="ltr">
+                                {isProfit ? '+' : ''}{totalChangePct.toFixed(1)}%
+                             </span>
+                           </div>
                         </div>
                       </div>
 
