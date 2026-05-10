@@ -274,65 +274,47 @@ const App = () => {
 
     const portfolioDesc = holdings.map(h => `${h.symbol} (${h.sector}) - ${h.quantity} units @ ${h.avgPrice} ${h.currency}`).join(', ');
 
-    const prompt = `You are an expert financial analyst. Analyze the following portfolio and return a structured JSON response in Hebrew. Provide general, educational market analysis based on current conditions.
+    const prompt = `You are a financial analyst. Analyze the following portfolio and return a STRICT JSON object in Hebrew. Do NOT include markdown formatting or blocks.
+    
+    Structure required:
+    {
+      "overview": "Short overall analysis",
+      "riskLevel": "נמוך / בינוני / גבוה",
+      "atRisk": [{"symbol": "TICKER", "reason": "Why it's risky right now"}],
+      "toIncrease": [{"symbol": "TICKER", "reason": "Why it might be a good buy"}],
+      "recommendations": ["Actionable tip 1", "Actionable tip 2"]
+    }
     
     Portfolio Data: ${portfolioDesc}
     Current USD/ILS rate: ${usdRate}`;
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+      // השתמשנו במודל פומבי ויציב שזמין לכל מפתח API
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { 
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: "OBJECT",
-              properties: {
-                overview: { type: "STRING" },
-                riskLevel: { type: "STRING" },
-                atRisk: {
-                  type: "ARRAY",
-                  items: {
-                    type: "OBJECT",
-                    properties: {
-                      symbol: { type: "STRING" },
-                      reason: { type: "STRING" }
-                    }
-                  }
-                },
-                toIncrease: {
-                  type: "ARRAY",
-                  items: {
-                    type: "OBJECT",
-                    properties: {
-                      symbol: { type: "STRING" },
-                      reason: { type: "STRING" }
-                    }
-                  }
-                },
-                recommendations: {
-                  type: "ARRAY",
-                  items: { type: "STRING" }
-                }
-              },
-              required: ["overview", "riskLevel", "atRisk", "toIncrease", "recommendations"]
-            }
+            responseMimeType: "application/json"
           }
         })
       });
 
       if (!response.ok) {
-         throw new Error(`HTTP Error: ${response.status}`);
+         const errText = await response.text();
+         throw new Error(`HTTP ${response.status}: ${errText}`);
       }
 
       const result = await response.json();
       let rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
       
       if (!rawText) {
-         throw new Error("No content returned");
+         throw new Error("לא התקבלו נתונים מהשרת.");
       }
+
+      // מנקה פורמט Markdown במקרה שה-API בכל זאת החזיר
+      rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
 
       const parsedData = JSON.parse(rawText);
       setAiData({
@@ -344,7 +326,8 @@ const App = () => {
       });
     } catch (err) {
       console.error("AI Error:", err);
-      setError("שגיאה בתקשורת עם שרת ה-AI. ייתכן שיש עומס רגעי, נסה שוב.");
+      // מציג את השגיאה המדויקת למשתמש כדי להבין מה הבעיה
+      setError(`שגיאת AI: ${err.message}`);
     } finally {
       setAiLoading(false);
     }
