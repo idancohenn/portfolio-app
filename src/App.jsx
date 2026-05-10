@@ -148,7 +148,9 @@ const App = () => {
   }, []);
 
   const handleLinkGoogle = async () => {
-    if (!user?.isAnonymous) return;
+    // linkWithRedirect / linkWithPopup require the signed-in User, not the Auth instance.
+    const currentUser = auth.currentUser;
+    if (!currentUser?.isAnonymous) return;
     setLinkGoogleLoading(true);
     setError(null);
     const narrow =
@@ -161,18 +163,18 @@ const App = () => {
     const useRedirectFlow = narrow || !isLocalDev;
     try {
       if (useRedirectFlow) {
-        await linkWithRedirect(auth, googleProvider);
+        await linkWithRedirect(currentUser, googleProvider);
         return;
       }
       try {
-        await linkWithPopup(auth, googleProvider);
+        await linkWithPopup(currentUser, googleProvider);
       } catch (popupErr) {
         console.error('linkWithPopup', popupErr?.code, popupErr);
         if (
           popupErr?.code === 'auth/popup-blocked' ||
           popupErr?.code === 'auth/cancelled-popup-request'
         ) {
-          await linkWithRedirect(auth, googleProvider);
+          await linkWithRedirect(currentUser, googleProvider);
           return;
         }
         const msg = formatGoogleLinkError(popupErr);
