@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInWithCustomToken, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import {
   Wallet, Plus, Trash2, RefreshCcw, BrainCircuit,
   Briefcase, ArrowUpRight, AlertCircle, TrendingDown,
   PieChart, LayoutGrid, X, Globe, ShieldAlert,
   ArrowRightLeft, Sparkles, Activity, ShieldCheck,
-  TrendingUp, Edit2, ArrowDownUp, Filter
+  TrendingUp, Edit2, ArrowDownUp, Filter, LogOut
 } from 'lucide-react';
 
 // --- Firebase Configuration ---
@@ -22,6 +22,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const googleProvider = new GoogleAuthProvider();
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'portfolio-tracker-pro-v3';
 const apiKey = "AIzaSyDyHv0arWlmi0IlAoA4t5XFS_3yWjOE6ak";
 
@@ -64,8 +65,6 @@ const App = () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
           await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
         }
 
         // Fetch Live USD/ILS Rate
@@ -79,13 +78,29 @@ const App = () => {
           console.warn("Could not fetch live rate, using default.", e);
         }
       } catch (err) {
-        setError("שגיאה בהתחברות");
+        setError("שגיאה בהתחברות הראשונית");
       }
     };
     initApp();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
     return () => unsubscribe();
   }, []);
+
+  const handleGoogleLogin = async () => {
+    setError(null);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      setError(`שגיאה בהתחברות: ${err.message}`);
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+  };
 
   // 2. Data Fetching
   useEffect(() => {
@@ -367,7 +382,27 @@ const App = () => {
     );
   };
 
-  if (loading && !user) return <div className="flex h-screen items-center justify-center bg-slate-50"><RefreshCcw className="animate-spin text-blue-600" /></div>;
+  if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50"><RefreshCcw className="animate-spin text-blue-600" /></div>;
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-8 text-center" dir="rtl">
+        <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center mb-8 shadow-2xl">
+          <Wallet size={40} className="text-white" />
+        </div>
+        <h1 className="text-4xl font-black text-white mb-4 tracking-tight">MyWealth Pro</h1>
+        <p className="text-slate-400 mb-12">התחבר עם חשבון הגוגל שלך כדי לסנכרן את התיק בין כל המכשירים בצורה מאובטחת.</p>
+
+        <button
+          onClick={handleGoogleLogin}
+          className="w-full max-w-xs bg-white text-slate-900 font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
+        >
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-6 h-6" />
+          התחבר עם Google
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans pb-24" dir="rtl">
@@ -390,9 +425,14 @@ const App = () => {
             <RefreshCcw size={16} className={isRefreshingPrices ? "animate-spin text-blue-500" : ""} />
           </button>
         </div>
-        <button onClick={() => { setEditingId(null); setIsAdding(true); }} className="bg-slate-900 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform">
-          <Plus size={22} />
-        </button>
+        <div className="flex gap-2">
+          <button onClick={handleLogout} className="bg-white text-slate-400 hover:text-red-500 border border-slate-100 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-colors">
+            <LogOut size={18} />
+          </button>
+          <button onClick={() => { setEditingId(null); setIsAdding(true); }} className="bg-slate-900 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform">
+            <Plus size={22} />
+          </button>
+        </div>
       </header>
 
       <main className="px-4 py-6 max-w-md mx-auto">
