@@ -55,7 +55,7 @@ const App = () => {
   const [sortBy, setSortBy] = useState('value-desc'); // 'value-desc', 'value-asc', 'profit-desc', 'sector', 'platform'
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
 
-  const sectors = ['שבבים', 'תוכנה', 'סייבר', 'פינטק', 'מדדים', 'אנרגיה', 'נדל"ן', 'ביומד', 'פיננסים', 'אחר'];
+  const sectors = ['שבבים', 'תוכנה', 'סייבר', 'פינטק', 'מדדים', 'אנרגיה', 'דאטה סנטרים', 'ביומד', 'פיננסים', 'אחר'];
   const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
   // 1. Init & Fetch Exchange Rate
