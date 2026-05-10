@@ -506,7 +506,7 @@ const App = () => {
               </div>
             </div>
 
-            {/* Holdings List */}
+            {/* Holdings List (Compact Design) */}
             {holdings.length === 0 ? (
               <div className="bg-white rounded-3xl p-8 text-center shadow-sm border border-slate-100 mt-4">
                 <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
@@ -516,7 +516,7 @@ const App = () => {
                 <button onClick={() => setIsAdding(true)} className="text-blue-600 font-bold bg-blue-50 px-6 py-2 rounded-full">הוסף נכס ראשון</button>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {sortedHoldings.map(h => {
                   const priceForCalc = h.currency === 'ILS' ? h.avgPrice / 100 : h.avgPrice;
                   const mData = marketData[h.symbol] || { currentPrice: priceForCalc, dailyChangePct: 0 };
@@ -531,60 +531,62 @@ const App = () => {
                     <div 
                       key={h.id} 
                       onClick={() => setExpandedHoldingId(isExpanded ? null : h.id)}
-                      className="bg-white p-3.5 rounded-[20px] shadow-sm border border-slate-100 flex flex-col gap-2 transition-all hover:shadow-md cursor-pointer select-none"
+                      className="bg-white px-3 py-2.5 rounded-[16px] shadow-sm border border-slate-100 flex flex-col transition-all active:scale-[0.98] cursor-pointer select-none"
                     >
-                      {/* Top Row: Main Info */}
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <div className="font-extrabold text-slate-900 text-lg leading-none mb-1.5">{h.symbol}</div>
-                          <div className="text-[10px] text-slate-400 font-bold">
-                            {h.sector} • {h.platform}
+                      {/* Compact Single Row View */}
+                      <div className="flex justify-between items-center gap-2">
+                        
+                        {/* Right: Symbol */}
+                        <div className="flex flex-col min-w-[3rem]">
+                          <span className="font-extrabold text-slate-900 text-base leading-tight">{h.symbol}</span>
+                          <span className="text-[8px] text-slate-400 font-bold uppercase truncate">{h.platform}</span>
+                        </div>
+
+                        {/* Middle: Compact Stats Box */}
+                        <div className="flex items-center justify-between text-[9px] text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1.5 rounded-[10px] flex-1 max-w-[150px]">
+                          <div className="flex flex-col items-center">
+                            <span className="opacity-80">כמות</span>
+                            <span className="font-bold text-slate-700">{h.quantity}</span>
+                          </div>
+                          <div className="w-px h-4 bg-slate-200"></div>
+                          <div className="flex flex-col items-center">
+                            <span className="opacity-80">קניה</span>
+                            <span className="font-bold text-slate-700">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="w-px h-4 bg-slate-200"></div>
+                          <div className="flex flex-col items-center">
+                            <span className="opacity-80">נוכחי</span>
+                            <span className="font-bold text-slate-700">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                           </div>
                         </div>
-                        <div className="text-left flex flex-col items-end">
-                           <div className="font-extrabold text-slate-900 text-base leading-none mb-1.5">
+
+                        {/* Left: Total Value & Profit */}
+                        <div className="flex flex-col items-end min-w-[4rem]">
+                           <span className="font-black text-slate-900 text-sm leading-tight">
                              {symbolCurrency}{totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                           </div>
-                           <div className={`text-[11px] font-bold px-1.5 py-0.5 rounded-md ${isProfit ? 'text-green-500 bg-green-50/50' : 'text-red-500 bg-red-50/50'}`} dir="ltr">
+                           </span>
+                           <span className={`text-[9px] font-bold px-1 py-0.5 rounded mt-0.5 ${isProfit ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`} dir="ltr">
                               {isProfit ? '+' : ''}{totalChangePct.toFixed(1)}%
-                           </div>
+                           </span>
                         </div>
                       </div>
 
-                      {/* Middle Row: Details (Compact) */}
-                      <div className="flex items-center justify-between text-[10px] text-slate-500 bg-slate-50 p-2.5 rounded-[12px] mt-1">
-                        <div className="flex flex-col">
-                          <span className="opacity-70">כמות</span>
-                          <span className="font-bold text-slate-700">{h.quantity}</span>
-                        </div>
-                        <div className="w-px h-6 bg-slate-200 mx-2"></div>
-                        <div className="flex flex-col">
-                          <span className="opacity-70">קניה</span>
-                          <span className="font-bold text-slate-700">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                        </div>
-                        <div className="w-px h-6 bg-slate-200 mx-2"></div>
-                        <div className="flex flex-col text-left">
-                          <span className="opacity-70">מחיר נוכחי</span>
-                          <span className="font-bold text-slate-700">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                        </div>
-                      </div>
-
-                      {/* Expanded Actions */}
+                      {/* Expanded Actions (Toggle) */}
                       {isExpanded && (
-                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 mt-1 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="flex items-center justify-end gap-2 pt-2.5 mt-2.5 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
                            <button 
                              onClick={(e) => { e.stopPropagation(); openEditModal(h); setExpandedHoldingId(null); }} 
-                             className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-xl flex items-center gap-1.5 transition-colors"
+                             className="px-4 py-1.5 text-[11px] font-bold text-slate-500 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-lg flex items-center gap-1.5 transition-colors"
                            >
-                             <Edit2 size={14} />
-                             <span>עריכה</span>
+                             <Edit2 size={12} />
+                             עריכה
                            </button>
                            <button 
                              onClick={(e) => { e.stopPropagation(); deleteHolding(h.id); }} 
-                             className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-red-600 bg-slate-50 hover:bg-red-50 rounded-xl flex items-center gap-1.5 transition-colors"
+                             className="px-4 py-1.5 text-[11px] font-bold text-slate-500 hover:text-red-600 bg-slate-50 hover:bg-red-50 rounded-lg flex items-center gap-1.5 transition-colors"
                            >
-                             <Trash2 size={14} />
-                             <span>מחיקה</span>
+                             <Trash2 size={12} />
+                             מחיקה
                            </button>
                         </div>
                       )}
