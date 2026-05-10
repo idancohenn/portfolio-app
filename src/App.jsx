@@ -513,7 +513,7 @@ const App = () => {
                 <button onClick={() => setIsAdding(true)} className="text-blue-600 font-bold bg-blue-50 px-6 py-2 rounded-full">הוסף נכס ראשון</button>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {sortedHoldings.map(h => {
                   const priceForCalc = h.currency === 'ILS' ? h.avgPrice / 100 : h.avgPrice;
                   const mData = marketData[h.symbol] || { currentPrice: priceForCalc, dailyChangePct: 0 };
@@ -524,45 +524,52 @@ const App = () => {
                   const totalValue = h.quantity * currentPrice;
 
                   return (
-                    <div key={h.id} className="bg-white p-3 rounded-[20px] shadow-sm border border-slate-100 flex flex-col gap-2 transition-all hover:shadow-md">
-                      <div className="flex items-center justify-between">
-                        {/* Left: Icon & Info */}
-                        <div className="flex items-center gap-3 flex-1">
-                          <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center font-black text-slate-700 shadow-inner text-sm shrink-0">
+                    <div key={h.id} className="bg-white p-4 rounded-[20px] shadow-sm border border-slate-100 flex flex-col gap-3 transition-all hover:shadow-md">
+                      {/* Top Row: Main Info */}
+                      <div className="flex justify-between items-start">
+                        <div className="flex items-center gap-3">
+                          <div className="w-11 h-11 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center font-black text-slate-700 shadow-inner text-base shrink-0">
                             {h.symbol[0]}
                           </div>
-                          <div className="min-w-0">
-                            <div className="font-extrabold text-slate-900 text-sm truncate">{h.symbol}</div>
-                            <div className="text-[10px] text-slate-400 font-medium flex items-center gap-1 mt-0.5 truncate">
+                          <div>
+                            <div className="font-extrabold text-slate-900 text-base leading-tight">{h.symbol}</div>
+                            <div className="text-[10px] text-slate-400 font-medium flex items-center gap-1 mt-1">
                               <span>{h.sector}</span> • <span>{h.platform}</span>
                             </div>
                           </div>
                         </div>
-
-                        {/* Middle: Prices */}
-                        <div className="flex flex-col items-end text-right px-2 min-w-[70px]">
-                          <span className="text-[10px] text-slate-400 font-medium">נוכחי</span>
-                          <strong className="text-slate-700 text-xs">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
-                        </div>
-                        <div className="flex flex-col items-end text-right min-w-[70px] border-r border-slate-100 pr-2">
-                          <span className="text-[10px] text-slate-400 font-medium">קניה</span>
-                          <strong className="text-slate-500 text-xs">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
-                        </div>
-
-                        {/* Right: Total Value & Actions */}
-                        <div className="text-left flex flex-col items-end pl-1 min-w-[80px]">
-                          <div className="font-extrabold text-slate-800 text-sm">
-                            {symbolCurrency}{totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                          </div>
-                          <div className="flex items-center justify-end gap-2 mt-1">
-                            <div className={`text-[10px] font-bold flex items-center gap-0.5 ${isProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
+                        <div className="text-left flex flex-col items-end">
+                           <div className="font-extrabold text-slate-900 text-base">
+                             {symbolCurrency}{totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                           </div>
+                           <div className={`text-[11px] font-bold mt-1 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 ${isProfit ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`} dir="ltr">
                               {isProfit ? '+' : ''}{totalChangePct.toFixed(1)}%
-                            </div>
-                            <div className="flex items-center border-l border-slate-200 pl-2 ml-1">
-                              <button onClick={() => openEditModal(h)} className="text-slate-300 hover:text-blue-500 p-1"><Edit2 size={12} /></button>
-                              <button onClick={() => deleteHolding(h.id)} className="text-slate-300 hover:text-red-500 p-1"><Trash2 size={12} /></button>
-                            </div>
+                           </div>
+                        </div>
+                      </div>
+
+                      {/* Divider */}
+                      <div className="h-px w-full bg-slate-50"></div>
+
+                      {/* Bottom Row: Details & Actions */}
+                      <div className="flex items-center justify-between text-[11px]">
+                        <div className="flex items-center gap-3">
+                          <div className="flex flex-col">
+                            <span className="text-slate-400">קניה</span>
+                            <span className="font-bold text-slate-600">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                           </div>
+                          <div className="flex flex-col border-r border-slate-100 pr-3">
+                            <span className="text-slate-400">נוכחי</span>
+                            <span className="font-bold text-slate-700">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex flex-col border-r border-slate-100 pr-3">
+                            <span className="text-slate-400">כמות</span>
+                            <span className="font-bold text-slate-600">{h.quantity}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 bg-slate-50 p-0.5 rounded-lg border border-slate-100">
+                           <button onClick={() => openEditModal(h)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-white rounded-md transition-all"><Edit2 size={14} /></button>
+                           <button onClick={() => deleteHolding(h.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-white rounded-md transition-all"><Trash2 size={14} /></button>
                         </div>
                       </div>
                     </div>
