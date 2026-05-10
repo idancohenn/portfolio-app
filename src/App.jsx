@@ -1,18 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import {
-  getAuth,
-  initializeAuth,
-  signInAnonymously,
-  signInWithCustomToken,
-  onAuthStateChanged,
-  GoogleAuthProvider,
-  linkWithPopup,
-  linkWithRedirect,
-  getRedirectResult,
-  indexedDBLocalPersistence,
-  browserLocalPersistence
-} from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import {
   Wallet, Plus, Trash2, RefreshCcw, BrainCircuit,
@@ -32,67 +20,10 @@ const firebaseConfig = {
   appId: "1:213503174907:web:6f9466a33db39ec968a85e"
 };
 const app = initializeApp(firebaseConfig);
-
-/** IndexedDB + localStorage persistence (avoids Rolldown missing-export on firebase/auth barrel). */
-function getOrCreateAuth() {
-  try {
-    return initializeAuth(app, {
-      persistence: [indexedDBLocalPersistence, browserLocalPersistence]
-    });
-  } catch (e) {
-    if (e?.code === 'auth/already-initialized') {
-      return getAuth(app);
-    }
-    throw e;
-  }
-}
-
-const auth = getOrCreateAuth();
+const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'portfolio-tracker-pro-v3';
 const apiKey = "AIzaSyDyHv0arWlmi0IlAoA4t5XFS_3yWjOE6ak";
-const hasEmbeddedAuthToken = typeof __initial_auth_token !== 'undefined' && __initial_auth_token;
-const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: 'select_account' });
-
-function authorizedDomainsHint() {
-  if (typeof window === 'undefined') return '';
-  const host = window.location.hostname;
-  return ` הוסף ב-Firebase את הדומיין "${host}" תחת Authentication → Settings → Authorized domains (ובנוסף את כל תתי-הדומיין של Vercel אם צריך).`;
-}
-
-/** User-facing Hebrew message; returns null when the UI should stay silent (user cancelled). */
-function formatGoogleLinkError(err) {
-  const code = err?.code;
-  const hint = authorizedDomainsHint();
-  if (code === 'auth/popup-closed-by-user') return null;
-  if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
-    return null;
-  }
-  if (!code) {
-    const detail = err?.message ? ` פרטים: ${String(err.message).slice(0, 180)}` : '';
-    return `שגיאה בהתחברות ל-Google.${detail}${hint}`;
-  }
-  if (code === 'auth/credential-already-in-use') {
-    return 'חשבון Google זה כבר מקושר למשתמש אחר. נסה עם חשבון אחר.';
-  }
-  if (code === 'auth/unauthorized-domain') {
-    return `הדומיין של האתר לא מאושר ב-Firebase.${hint}`;
-  }
-  if (code === 'auth/operation-not-allowed') {
-    return 'התחברות Google לא הופעלה בפרויקט. ב-Firebase: Authentication → Sign-in method → Google → Enable.';
-  }
-  if (code === 'auth/network-request-failed') {
-    return 'בעיית רשת. בדוק חיבור לאינטרנט ונסה שוב.';
-  }
-  if (code === 'auth/web-storage-unsupported' || code === 'auth/storage-error') {
-    return 'הדפדפן חוסם אחסון נדרש להתחברות. נסה דפדפן אחר או כבה מצב פרטי.';
-  }
-  if (code === 'auth/internal-error') {
-    return `שגיאה פנימית ב-Firebase בהתחברות ל-Google. נסה שוב בעוד רגע, או נסה התחברות בחלון פרטי.${hint}`;
-  }
-  return `שגיאה בהתחברות (${code}).${hint}`;
-}
 
 const App = () => {
   const [user, setUser] = useState(null);
@@ -123,31 +54,17 @@ const App = () => {
   // Sorting State
   const [sortBy, setSortBy] = useState('value-desc'); // 'value-desc', 'value-asc', 'profit-desc', 'sector', 'platform'
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
-  const [linkGoogleLoading, setLinkGoogleLoading] = useState(false);
 
   const sectors = ['שבבים', 'תוכנה', 'סייבר', 'פינטק', 'מדדים', 'אנרגיה', 'דאטה סנטרים', 'ביומד', 'פיננסים', 'אחר'];
   const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
-  // 1. Init & Fetch Exchange Rate — finish redirect + sign-in before subscribing (avoids flash / wrong anonymous state)
+  // 1. Init & Fetch Exchange Rate
   useEffect(() => {
-    let unsubscribe = () => {};
     const initApp = async () => {
       try {
-        await auth.authStateReady();
-        try {
-          const cred = await getRedirectResult(auth);
-          if (cred?.user && !cred.user.isAnonymous) {
-            console.info('Firebase: Google account linked after redirect');
-          }
-        } catch (redirectErr) {
-          console.error('getRedirectResult', redirectErr?.code, redirectErr);
-          const msg = formatGoogleLinkError(redirectErr);
-          if (msg) setError(msg);
-        }
-
-        if (hasEmbeddedAuthToken) {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
           await signInWithCustomToken(auth, __initial_auth_token);
-        } else if (!auth.currentUser) {
+        } else {
           await signInAnonymously(auth);
         }
 
@@ -161,48 +78,14 @@ const App = () => {
         } catch (e) {
           console.warn("Could not fetch live rate, using default.", e);
         }
-      } catch {
+      } catch (err) {
         setError("שגיאה בהתחברות");
       }
-      unsubscribe = onAuthStateChanged(auth, setUser);
     };
     initApp();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
-
-  const handleLinkGoogle = async () => {
-    // linkWithRedirect / linkWithPopup require the signed-in User, not the Auth instance.
-    const currentUser = auth.currentUser;
-    if (!currentUser?.isAnonymous) return;
-    setLinkGoogleLoading(true);
-    setError(null);
-    try {
-      // On Vercel/custom domains, redirect often fails silently (partitioned storage). Prefer popup; redirect only if blocked.
-      try {
-        await linkWithPopup(currentUser, googleProvider);
-      } catch (popupErr) {
-        console.error('linkWithPopup', popupErr?.code, popupErr);
-        if (popupErr?.code === 'auth/popup-closed-by-user') {
-          return;
-        }
-        if (
-          popupErr?.code === 'auth/popup-blocked' ||
-          popupErr?.code === 'auth/cancelled-popup-request'
-        ) {
-          await linkWithRedirect(currentUser, googleProvider);
-          return;
-        }
-        const msg = formatGoogleLinkError(popupErr);
-        if (msg) setError(msg);
-      }
-    } catch (e) {
-      console.error('handleLinkGoogle', e?.code, e);
-      const msg = formatGoogleLinkError(e);
-      if (msg) setError(msg);
-    } finally {
-      setLinkGoogleLoading(false);
-    }
-  };
 
   // 2. Data Fetching
   useEffect(() => {
@@ -486,44 +369,6 @@ const App = () => {
 
   if (loading && !user) return <div className="flex h-screen items-center justify-center bg-slate-50"><RefreshCcw className="animate-spin text-blue-600" /></div>;
 
-  if (user?.isAnonymous && !hasEmbeddedAuthToken) {
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans flex flex-col items-center justify-center p-6" dir="rtl">
-        <div className="w-full max-w-sm bg-white rounded-[28px] shadow-xl border border-slate-100 p-8 text-center">
-          <h1 className="font-extrabold text-2xl tracking-tight text-slate-800 mb-2">MyWealth</h1>
-          <p className="text-sm text-slate-500 leading-relaxed mb-8">
-            התחבר עם Google כדי לשמור את תיק ההשקעות בענן ולסנכרן אותו בין המכשירים שלך.
-          </p>
-          <button
-            type="button"
-            onClick={handleLinkGoogle}
-            disabled={linkGoogleLoading}
-            className="w-full flex items-center justify-center gap-3 bg-white text-slate-800 font-bold py-3.5 px-4 rounded-2xl border border-slate-200 shadow-sm hover:bg-slate-50 active:scale-[0.98] transition-all disabled:opacity-60"
-          >
-            {linkGoogleLoading ? (
-              <RefreshCcw className="animate-spin text-blue-600" size={22} />
-            ) : (
-              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden>
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-              </svg>
-            )}
-            <span>{linkGoogleLoading ? 'מתחבר...' : 'המשך עם Google'}</span>
-          </button>
-        </div>
-        {error && (
-          <div className="fixed top-6 left-4 right-4 max-w-sm mx-auto bg-red-600 text-white p-4 rounded-2xl flex items-center gap-3 shadow-xl z-50">
-            <AlertCircle size={20} className="shrink-0" />
-            <p className="text-sm font-bold flex-1 text-right">{error}</p>
-            <button type="button" onClick={() => setError(null)} className="shrink-0" aria-label="סגור"><X size={20} /></button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans pb-24" dir="rtl">
 
@@ -639,57 +484,12 @@ const App = () => {
                   const totalValue = h.quantity * currentPrice;
 
                   return (
-                    <div key={h.id} className="bg-white p-3 rounded-[20px] shadow-sm border border-slate-100 transition-all hover:shadow-md overflow-hidden">
-                      {/* Narrow screens: stacked identity + metric grid */}
-                      <div className="flex flex-col gap-3 sm:hidden">
-                        <div className="flex items-start gap-3 min-w-0">
+                    <div key={h.id} className="bg-white p-3 rounded-[20px] shadow-sm border border-slate-100 flex flex-col gap-2 transition-all hover:shadow-md">
+                      <div className="flex items-center justify-between">
+                        {/* Left: Icon & Info */}
+                        <div className="flex items-center gap-3 flex-1">
                           <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center font-black text-slate-700 shadow-inner text-sm shrink-0">
-                            {h.symbol?.[0] ?? '?'}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="font-extrabold text-slate-900 text-sm truncate">{h.symbol}</div>
-                                <div className="text-[10px] text-slate-400 font-medium mt-0.5 leading-snug line-clamp-2 break-words">
-                                  <span>{h.sector}</span>
-                                  <span className="text-slate-300 mx-1">•</span>
-                                  <span>{h.platform}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center shrink-0 gap-0.5">
-                                <button type="button" onClick={() => openEditModal(h)} className="text-slate-400 hover:text-blue-500 p-2 -m-1 rounded-lg" aria-label="עריכה"><Edit2 size={14} /></button>
-                                <button type="button" onClick={() => deleteHolding(h.id)} className="text-slate-400 hover:text-red-500 p-2 -m-1 rounded-lg" aria-label="מחיקה"><Trash2 size={14} /></button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 text-right">
-                          <div className="min-w-0">
-                            <span className="text-[10px] text-slate-400 font-medium block mb-0.5">נוכחי</span>
-                            <strong className="text-slate-700 text-sm font-bold tabular-nums break-words leading-tight block">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
-                          </div>
-                          <div className="min-w-0">
-                            <span className="text-[10px] text-slate-400 font-medium block mb-0.5">קניה</span>
-                            <strong className="text-slate-500 text-sm font-bold tabular-nums break-words leading-tight block">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
-                          </div>
-                          <div className="min-w-0">
-                            <span className="text-[10px] text-slate-400 font-medium block mb-0.5">שווי</span>
-                            <span className="font-extrabold text-slate-800 text-sm tabular-nums break-words leading-tight block">{symbolCurrency}{totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                          </div>
-                          <div className="min-w-0">
-                            <span className="text-[10px] text-slate-400 font-medium block mb-0.5">תשואה</span>
-                            <span className={`text-sm font-bold tabular-nums ${isProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
-                              {isProfit ? '+' : ''}{totalChangePct.toFixed(1)}%
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* sm+: single compact row */}
-                      <div className="hidden sm:flex items-center justify-between gap-2 min-w-0">
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center font-black text-slate-700 shadow-inner text-sm shrink-0">
-                            {h.symbol?.[0] ?? '?'}
+                            {h.symbol[0]}
                           </div>
                           <div className="min-w-0">
                             <div className="font-extrabold text-slate-900 text-sm truncate">{h.symbol}</div>
@@ -698,25 +498,29 @@ const App = () => {
                             </div>
                           </div>
                         </div>
-                        <div className="flex flex-col items-end text-right px-2 min-w-[70px] shrink-0">
+
+                        {/* Middle: Prices */}
+                        <div className="flex flex-col items-end text-right px-2 min-w-[70px]">
                           <span className="text-[10px] text-slate-400 font-medium">נוכחי</span>
-                          <strong className="text-slate-700 text-xs tabular-nums">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+                          <strong className="text-slate-700 text-xs">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
                         </div>
-                        <div className="flex flex-col items-end text-right min-w-[70px] border-r border-slate-100 pr-2 shrink-0">
+                        <div className="flex flex-col items-end text-right min-w-[70px] border-r border-slate-100 pr-2">
                           <span className="text-[10px] text-slate-400 font-medium">קניה</span>
-                          <strong className="text-slate-500 text-xs tabular-nums">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+                          <strong className="text-slate-500 text-xs">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
                         </div>
-                        <div className="text-left flex flex-col items-end pl-1 min-w-[80px] shrink-0">
-                          <div className="font-extrabold text-slate-800 text-sm tabular-nums">
+
+                        {/* Right: Total Value & Actions */}
+                        <div className="text-left flex flex-col items-end pl-1 min-w-[80px]">
+                          <div className="font-extrabold text-slate-800 text-sm">
                             {symbolCurrency}{totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                           </div>
                           <div className="flex items-center justify-end gap-2 mt-1">
-                            <div className={`text-[10px] font-bold flex items-center gap-0.5 tabular-nums ${isProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
+                            <div className={`text-[10px] font-bold flex items-center gap-0.5 ${isProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
                               {isProfit ? '+' : ''}{totalChangePct.toFixed(1)}%
                             </div>
-                            <div className="flex items-center border-l border-slate-200 pl-2 mr-1">
-                              <button type="button" onClick={() => openEditModal(h)} className="text-slate-300 hover:text-blue-500 p-1"><Edit2 size={12} /></button>
-                              <button type="button" onClick={() => deleteHolding(h.id)} className="text-slate-300 hover:text-red-500 p-1"><Trash2 size={12} /></button>
+                            <div className="flex items-center border-l border-slate-200 pl-2 ml-1">
+                              <button onClick={() => openEditModal(h)} className="text-slate-300 hover:text-blue-500 p-1"><Edit2 size={12} /></button>
+                              <button onClick={() => deleteHolding(h.id)} className="text-slate-300 hover:text-red-500 p-1"><Trash2 size={12} /></button>
                             </div>
                           </div>
                         </div>
