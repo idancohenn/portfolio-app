@@ -17,12 +17,12 @@ import {
 // --- Firebase Configuration ---
 // השתמש באובייקט שקיבלת מהמסוף של Firebase
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDsTa-TE41vy7JRD0NkwjG77Z6W2JPZuXc",
+  authDomain: "myportfolio-tracker.firebaseapp.com",
+  projectId: "myportfolio-tracker",
+  storageBucket: "myportfolio-tracker.firebasestorage.app",
+  messagingSenderId: "213503174907",
+  appId: "1:213503174907:web:6f9466a33db39ec968a85e"
 };
 
 const app = initializeApp(firebaseConfig);
