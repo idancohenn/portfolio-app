@@ -24,7 +24,9 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'portfolio-tracker-pro-v3';
-const apiKey = "AIzaSyDEHWyyE8l0OdO1b5LYLDl7z6C1cd0Go5g";
+
+// הבאת המפתח ממשתנה הסביבה של Vercel (או משתנה ברירת מחדל אם הוא לא קיים)
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
 
 const App = () => {
   const [user, setUser] = useState(null);
