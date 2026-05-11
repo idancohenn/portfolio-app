@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
+import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import {
   Wallet, Plus, Trash2, RefreshCcw, BrainCircuit,
   Briefcase, ArrowUpRight, AlertCircle, TrendingDown,
@@ -91,6 +91,26 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
+  // 1.5 Load Cached Market Data on Mount
+  useEffect(() => {
+    if (!user) return;
+    const loadCache = async () => {
+      try {
+        const cacheSnap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'));
+        if (cacheSnap.exists()) {
+          setMarketData(prev => {
+            // Apply cache only if we haven't fetched real fresh data yet
+            if (Object.keys(prev).length === 0) return cacheSnap.data();
+            return prev;
+          });
+        }
+      } catch (e) {
+        console.warn("Could not load market data cache", e);
+      }
+    };
+    loadCache();
+  }, [user]);
+
   const handleGoogleLogin = async () => {
     setError(null);
     try {
@@ -118,7 +138,7 @@ const App = () => {
     return () => unsubscribe();
   }, [user]);
 
-  // 2.5 Real Market Data Fetching (Yahoo Finance via Proxy)
+  // 2.5 Real Market Data Fetching (Fast Parallel Fetch)
   const fetchMarketPrices = async () => {
     if (holdings.length === 0) return;
     setIsRefreshingPrices(true);
@@ -127,7 +147,8 @@ const App = () => {
     // Get unique symbols to avoid duplicate requests
     const uniqueHoldings = Array.from(new Map(holdings.map(h => [h.symbol, h])).values());
 
-    for (const h of uniqueHoldings) {
+    // Fetch all prices in parallel instead of waiting for one by one
+    const fetchPromises = uniqueHoldings.map(async (h) => {
       try {
         let ticker = h.symbol.toUpperCase();
         // Append .TA for Israeli stocks so Yahoo Finance recognizes them
@@ -135,44 +156,64 @@ const App = () => {
           ticker += '.TA';
         }
 
-        // Yahoo Finance v8 API via AllOrigins free CORS proxy (Added timestamp to bypass proxy cache)
         const timestamp = Date.now();
         const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&_ts=${timestamp}`;
         const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
 
         const res = await fetch(proxyUrl);
-        if (!res.ok) throw new Error("API request failed");
+        if (!res.ok) return null;
 
         const data = await res.json();
 
         if (data?.chart?.result?.[0]) {
           const result = data.chart.result[0];
-          const currentPrice = result.meta.regularMarketPrice;
-          const prevClose = result.meta.chartPreviousClose || result.meta.previousClose;
-
-          let normalizedCurrent = currentPrice;
-          let normalizedPrev = prevClose;
+          let currentPrice = result.meta.regularMarketPrice;
+          let prevClose = result.meta.chartPreviousClose || result.meta.previousClose;
 
           // Yahoo usually returns TASE (Israel) prices in Agorot. We convert to ILS.
           if (h.currency === 'ILS') {
-            normalizedCurrent = currentPrice / 100;
-            normalizedPrev = prevClose / 100;
+            currentPrice /= 100;
+            prevClose /= 100;
           }
 
-          const dailyChangePct = prevClose ? ((normalizedCurrent - normalizedPrev) / normalizedPrev) * 100 : 0;
+          const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
 
-          newMarketData[h.symbol] = {
-            currentPrice: normalizedCurrent,
+          return {
+            symbol: h.symbol,
+            currentPrice: currentPrice,
             dailyChangePct: dailyChangePct
           };
         }
       } catch (e) {
         console.warn(`Could not fetch data for ${h.symbol}`);
       }
-    }
+      return null;
+    });
+
+    const results = await Promise.all(fetchPromises);
+    let cacheUpdated = false;
+
+    results.forEach(res => {
+      if (res) {
+        newMarketData[res.symbol] = {
+          currentPrice: res.currentPrice,
+          dailyChangePct: res.dailyChangePct
+        };
+        cacheUpdated = true;
+      }
+    });
 
     setMarketData(newMarketData);
     setIsRefreshingPrices(false);
+
+    // Save to Firestore Cache so next time app loads it's instantly available
+    if (cacheUpdated && user) {
+      try {
+        await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'), newMarketData);
+      } catch (e) {
+        console.warn("Failed to save market cache", e);
+      }
+    }
   };
 
   // Fetch prices automatically when holdings are loaded
