@@ -24,7 +24,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'portfolio-tracker-pro-v3';
-const apiKey = "AIzaSyDyHv0arWlmi0IlAoA4t5XFS_3yWjOE6ak";
+const apiKey = "AIzaSyDEHWyyE8l0OdO1b5LYLDl7z6C1cd0Go5g";
 
 const App = () => {
   const [user, setUser] = useState(null);
