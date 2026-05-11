@@ -266,7 +266,7 @@ const App = () => {
     });
   }, [holdings, marketData, usdRate, sortBy]);
 
-  // 4. Structured AI Insights (JSON format request)
+  // 4. Structured AI Insights
   const fetchAiInsights = async () => {
     if (holdings.length === 0) return;
     setAiLoading(true);
@@ -275,54 +275,39 @@ const App = () => {
 
     const portfolioDesc = holdings.map(h => `${h.symbol} (${h.sector}) - ${h.quantity} units @ ${h.avgPrice} ${h.currency}`).join(', ');
 
-    const prompt = `You are a financial analyst. Analyze the following portfolio and return a STRICT JSON object in Hebrew.
+    const promptText = `You are a top-tier financial analyst. Analyze the user's portfolio and return a STRICT JSON object in Hebrew. Do NOT include markdown blocks like \`\`\`json. The JSON must have this exact structure:
+    {
+      "overview": "Short overall analysis",
+      "riskLevel": "נמוך / בינוני / גבוה",
+      "atRisk": [{"symbol": "TICKER", "reason": "Why it's risky right now"}],
+      "toIncrease": [{"symbol": "TICKER", "reason": "Why it might be a good buy"}],
+      "recommendations": ["Actionable tip 1", "Actionable tip 2"]
+    }
     
     Portfolio Data: ${portfolioDesc}
     Current USD/ILS rate: ${usdRate}`;
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+      const payload = {
+         contents: [{ parts: [{ text: promptText }] }]
+      };
+
+      // ניסיון ראשון - המודל הסטנדרטי
+      let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { 
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: "OBJECT",
-              properties: {
-                overview: { type: "STRING" },
-                riskLevel: { type: "STRING" },
-                atRisk: {
-                  type: "ARRAY",
-                  items: {
-                    type: "OBJECT",
-                    properties: {
-                      symbol: { type: "STRING" },
-                      reason: { type: "STRING" }
-                    }
-                  }
-                },
-                toIncrease: {
-                  type: "ARRAY",
-                  items: {
-                    type: "OBJECT",
-                    properties: {
-                      symbol: { type: "STRING" },
-                      reason: { type: "STRING" }
-                    }
-                  }
-                },
-                recommendations: {
-                  type: "ARRAY",
-                  items: { type: "STRING" }
-                }
-              },
-              required: ["overview", "riskLevel", "atRisk", "toIncrease", "recommendations"]
-            }
-          }
-        })
+        body: JSON.stringify(payload)
       });
+
+      // מנגנון הגנה: אם המפתח שלך חסום למודל החדש (404), נעבור למודל הבסיסי שפתוח לכולם
+      if (response.status === 404) {
+         console.warn("Model not found, falling back to gemini-pro...");
+         response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify(payload)
+         });
+      }
 
       if (!response.ok) {
          const errText = await response.text();
@@ -336,7 +321,24 @@ const App = () => {
          throw new Error("לא התקבלו נתונים מהשרת.");
       }
 
-      const parsedData = JSON.parse(rawText);
+      // מנקה את הטקסט למקרה שהבינה המלאכותית התעלמה מהבקשה להחזיר JSON נקי
+      rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+      let parsedData;
+      try {
+         parsedData = JSON.parse(rawText);
+      } catch (e) {
+         console.warn("JSON Parse Error, using raw text", rawText);
+         // הגנה: אם חזר טקסט רגיל במקום JSON, נציג אותו בסקירה הכללית בלי לקרוס
+         parsedData = {
+           overview: rawText,
+           riskLevel: "לא ברור",
+           atRisk: [],
+           toIncrease: [],
+           recommendations: ["לא ניתן היה לחלץ המלצות מובנות, אנא קרא את הסקירה הכללית."]
+         };
+      }
+
       setAiData({
         overview: parsedData.overview || "לא התקבל מידע ברור מהמערכת.",
         riskLevel: parsedData.riskLevel || "לא ידוע",
@@ -344,9 +346,10 @@ const App = () => {
         toIncrease: Array.isArray(parsedData.toIncrease) ? parsedData.toIncrease : [],
         recommendations: Array.isArray(parsedData.recommendations) ? parsedData.recommendations : []
       });
+
     } catch (err) {
       console.error("AI Error:", err);
-      setError(`שגיאת AI: ${err.message}`);
+      setError(`שגיאת שרת: ודא שמפתח ה-API תקין (${err.message})`);
     } finally {
       setAiLoading(false);
     }
