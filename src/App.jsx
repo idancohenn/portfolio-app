@@ -7,7 +7,7 @@ import {
   Briefcase, ArrowUpRight, AlertCircle, TrendingDown,
   PieChart, LayoutGrid, X, Globe, ShieldAlert,
   ArrowRightLeft, Sparkles, Activity, ShieldCheck,
-  TrendingUp, Edit2, ArrowDownUp, Filter, LogOut
+  TrendingUp, Edit2, ArrowDownUp, Filter, LogOut, Copy, CheckCircle2
 } from 'lucide-react';
 
 // --- Firebase Configuration ---
@@ -25,9 +25,6 @@ const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'portfolio-tracker-pro-v3';
 
-// הבאת המפתח ממשתנה הסביבה של Vercel (או משתנה ברירת מחדל אם הוא לא קיים)
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
-
 const App = () => {
   const [user, setUser] = useState(null);
   const [holdings, setHoldings] = useState([]);
@@ -38,9 +35,9 @@ const App = () => {
   // Real-time Exchage Rate
   const [usdRate, setUsdRate] = useState(3.75);
 
-  // AI State
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiData, setAiData] = useState(null);
+  // AI Prompt State
+  const [generatedPrompt, setGeneratedPrompt] = useState("");
+  const [isCopied, setIsCopied] = useState(false);
   const [error, setError] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -268,93 +265,52 @@ const App = () => {
     });
   }, [holdings, marketData, usdRate, sortBy]);
 
-  // 4. Structured AI Insights
-  const fetchAiInsights = async () => {
+  // 4. Generate AI Prompt Text
+  const generateAiPrompt = () => {
     if (holdings.length === 0) return;
-    setAiLoading(true);
-    setAiData(null);
-    setError(null);
-
-    const portfolioDesc = holdings.map(h => `${h.symbol} (${h.sector}) - ${h.quantity} units @ ${h.avgPrice} ${h.currency}`).join(', ');
-
-    const promptText = `You are a top-tier financial analyst. Analyze the user's portfolio and return a STRICT JSON object in Hebrew. Do NOT include markdown blocks like \`\`\`json. The JSON must have this exact structure:
-    {
-      "overview": "Short overall analysis",
-      "riskLevel": "נמוך / בינוני / גבוה",
-      "atRisk": [{"symbol": "TICKER", "reason": "Why it's risky right now"}],
-      "toIncrease": [{"symbol": "TICKER", "reason": "Why it might be a good buy"}],
-      "recommendations": ["Actionable tip 1", "Actionable tip 2"]
-    }
     
-    Portfolio Data: ${portfolioDesc}
-    Current USD/ILS rate: ${usdRate}`;
+    let text = "שלום, אני מבקש שתשמש כיועץ השקעות מומחה ותנתח את תיק ההשקעות שלי. אלו הנתונים המעודכנים של האחזקות שלי:\n\n";
+    
+    // בונה את רשימת המניות
+    const sortedForPrompt = [...holdings].sort((a, b) => a.symbol.localeCompare(b.symbol));
+    sortedForPrompt.forEach(h => {
+       const priceForCalc = h.currency === 'ILS' ? h.avgPrice / 100 : h.avgPrice;
+       const mData = marketData[h.symbol] || { currentPrice: priceForCalc };
+       const currentPrice = mData.currentPrice;
+       const symbolCurrency = h.currency === 'USD' ? '$' : '₪';
+       const profitPct = priceForCalc > 0 ? ((currentPrice - priceForCalc) / priceForCalc) * 100 : 0;
+       
+       text += `- [${h.symbol}] סקטור: ${h.sector}. כמות: ${h.quantity}. מחיר קניה: ${symbolCurrency}${priceForCalc.toFixed(2)}, מחיר נוכחי: ${symbolCurrency}${currentPrice.toFixed(2)} (תשואה: ${profitPct > 0 ? '+' : ''}${profitPct.toFixed(1)}%).\n`;
+    });
+    
+    text += `\nשער דולר רציף לעיונך בעת החישובים: ₪${usdRate.toFixed(3)}\n\n`;
+    text += "משימות לניתוח:\n";
+    text += "1. סקירה כללית: מה דעתך על הפיזור של התיק הנוכחי?\n";
+    text += "2. רמת סיכון: הערך את רמת הסיכון של התיק (נמוכה/בינונית/גבוהה) והסבר בקצרה למה.\n";
+    text += "3. חשיפה עודפת: האם יש מניות או סקטורים שאני חשוף אליהם יותר מדי וכדאי לי לשקול למכור/להקטין?\n";
+    text += "4. הזדמנויות: בהתבסס על מצב השוק הנוכחי, אילו סקטורים או סוגי נכסים חסרים לי בתיק שכדאי לי לשקול להוסיף?\n";
+    text += "5. סיכום: תן לי 3 המלצות פרקטיות וברורות להמשך דרכי.\n\n";
+    text += "אנא ענה בעברית רהוטה וברורה. אני מבין שזהו אינו ייעוץ פיננסי מחייב אלא דעה מקצועית בלבד.";
+    
+    setGeneratedPrompt(text);
+    setIsCopied(false);
+  };
 
+  const copyToClipboard = () => {
+    // יצירת אלמנט זמני להעתקה שעובד בכל הדפדפנים כולל סביבות מבודדות
+    const textArea = document.createElement("textarea");
+    textArea.value = generatedPrompt;
+    document.body.appendChild(textArea);
+    textArea.select();
     try {
-      const payload = {
-         contents: [{ parts: [{ text: promptText }] }]
-      };
-
-      // ניסיון ראשון - המודל הסטנדרטי
-      let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      // מנגנון הגנה: אם המפתח שלך חסום למודל החדש (404), נעבור למודל הבסיסי שפתוח לכולם
-      if (response.status === 404) {
-         console.warn("Model not found, falling back to gemini-pro...");
-         response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify(payload)
-         });
-      }
-
-      if (!response.ok) {
-         const errText = await response.text();
-         throw new Error(`HTTP ${response.status}: ${errText}`);
-      }
-
-      const result = await response.json();
-      let rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-      
-      if (!rawText) {
-         throw new Error("לא התקבלו נתונים מהשרת.");
-      }
-
-      // מנקה את הטקסט למקרה שהבינה המלאכותית התעלמה מהבקשה להחזיר JSON נקי
-      rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-
-      let parsedData;
-      try {
-         parsedData = JSON.parse(rawText);
-      } catch (e) {
-         console.warn("JSON Parse Error, using raw text", rawText);
-         // הגנה: אם חזר טקסט רגיל במקום JSON, נציג אותו בסקירה הכללית בלי לקרוס
-         parsedData = {
-           overview: rawText,
-           riskLevel: "לא ברור",
-           atRisk: [],
-           toIncrease: [],
-           recommendations: ["לא ניתן היה לחלץ המלצות מובנות, אנא קרא את הסקירה הכללית."]
-         };
-      }
-
-      setAiData({
-        overview: parsedData.overview || "לא התקבל מידע ברור מהמערכת.",
-        riskLevel: parsedData.riskLevel || "לא ידוע",
-        atRisk: Array.isArray(parsedData.atRisk) ? parsedData.atRisk : [],
-        toIncrease: Array.isArray(parsedData.toIncrease) ? parsedData.toIncrease : [],
-        recommendations: Array.isArray(parsedData.recommendations) ? parsedData.recommendations : []
-      });
-
+      document.execCommand('copy');
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2500);
     } catch (err) {
-      console.error("AI Error:", err);
-      setError(`שגיאת שרת: ודא שמפתח ה-API תקין (${err.message})`);
-    } finally {
-      setAiLoading(false);
+      console.error('Failed to copy', err);
+      setError('לא הצלחנו להעתיק אוטומטית, אנא העתק ידנית את הטקסט.');
     }
+    document.body.removeChild(textArea);
   };
 
   const handleAddHolding = async (e) => {
@@ -718,7 +674,7 @@ const App = () => {
           </div>
         )}
 
-        {/* --- TAB 3: AI ADVISOR --- */}
+        {/* --- TAB 3: AI ADVISOR PROMPT GENERATOR --- */}
         {activeTab === 'ai' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="bg-gradient-to-br from-indigo-900 to-purple-900 rounded-[28px] p-6 text-white shadow-xl">
@@ -728,94 +684,50 @@ const App = () => {
                 </div>
                 <div>
                   <h2 className="text-xl font-black">יועץ AI אישי</h2>
-                  <p className="text-indigo-200 text-xs">מופעל ע"י Google Gemini</p>
+                  <p className="text-indigo-200 text-xs">יצירת פקודה להעתקה</p>
                 </div>
               </div>
               <p className="text-sm text-indigo-100 leading-relaxed mb-6">
-                קבל ניתוח עומק של התיק שלך, זיהוי נקודות תורפה והמלצות להגדלת חשיפה בהתבסס על מצב השוק.
+                במקום לנסות להתחבר בעצמנו, המערכת תייצר עבורך פקודה (Prompt) מושלמת המכילה את כל הנתונים של התיק שלך. פשוט צור את הפקודה, העתק אותה, והדבק ב-ChatGPT או ב-Gemini.
               </p>
               <button
-                onClick={fetchAiInsights}
-                disabled={aiLoading}
+                onClick={generateAiPrompt}
+                disabled={holdings.length === 0}
                 className="w-full bg-white text-indigo-900 font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-70 shadow-lg"
               >
-                {aiLoading ? <RefreshCcw className="animate-spin" size={18} /> : <Sparkles size={18} />}
-                {aiLoading ? 'מנתח נתוני שוק...' : 'בצע ניתוח מעמיק לתיק'}
+                <Sparkles size={18} />
+                צור פקודה לבינה מלאכותית
               </button>
             </div>
 
-            {aiData && (
+            {generatedPrompt && (
               <div className="space-y-4 animate-in slide-in-from-bottom-8 duration-500">
-                {/* Overview */}
-                <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                    <Activity size={16} /> סקירה כללית
-                  </h3>
-                  <p className="text-slate-800 leading-relaxed text-sm font-medium">{aiData.overview}</p>
+                <div className="bg-white p-5 rounded-[24px] shadow-sm border border-slate-200 relative">
+                  <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+                    <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                      <Edit2 size={16} className="text-indigo-500" /> הפקודה שלך מוכנה:
+                    </h3>
+                    <button 
+                      onClick={copyToClipboard}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${isCopied ? 'bg-green-100 text-green-700' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
+                    >
+                      {isCopied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+                      {isCopied ? 'הועתק בהצלחה!' : 'העתק טקסט'}
+                    </button>
+                  </div>
+                  
+                  <div className="bg-slate-50 rounded-xl p-4 text-sm text-slate-600 whitespace-pre-wrap font-medium leading-relaxed max-h-[40vh] overflow-y-auto" dir="rtl">
+                    {generatedPrompt}
+                  </div>
+                  
+                  <button 
+                    onClick={copyToClipboard}
+                    className={`w-full mt-4 flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold transition-all ${isCopied ? 'bg-green-500 text-white' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+                  >
+                    {isCopied ? <CheckCircle2 size={18} /> : <Copy size={18} />}
+                    {isCopied ? 'הועתק ללוח!' : 'העתק והדבק ב-ChatGPT'}
+                  </button>
                 </div>
-
-                {/* Risk Level */}
-                <div className="flex items-center justify-between bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                    <ShieldCheck size={16} /> רמת סיכון נוכחית
-                  </h3>
-                  <span className={`px-4 py-1.5 rounded-full text-sm font-black ${aiData.riskLevel.includes('גבוה') ? 'bg-red-100 text-red-700' :
-                      aiData.riskLevel.includes('נמוך') ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
-                    }`}>
-                    {aiData.riskLevel}
-                  </span>
-                </div>
-
-                {/* At Risk */}
-                {aiData.atRisk && aiData.atRisk.length > 0 && (
-                  <div className="bg-red-50 p-5 rounded-3xl shadow-sm border border-red-100">
-                    <h3 className="text-sm font-bold text-red-700 uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <ShieldAlert size={16} /> מניות בסיכון גבוה
-                    </h3>
-                    <div className="space-y-3">
-                      {aiData.atRisk.map((item, i) => (
-                        <div key={i} className="bg-white p-3 rounded-2xl shadow-sm border border-red-50">
-                          <span className="font-black text-red-600 block mb-1">{item.symbol}</span>
-                          <span className="text-xs text-slate-600 leading-relaxed">{item.reason}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* To Increase */}
-                {aiData.toIncrease && aiData.toIncrease.length > 0 && (
-                  <div className="bg-green-50 p-5 rounded-3xl shadow-sm border border-green-100">
-                    <h3 className="text-sm font-bold text-green-700 uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <ArrowUpRight size={16} /> מניות שכדאי לשקול הגדלה
-                    </h3>
-                    <div className="space-y-3">
-                      {aiData.toIncrease.map((item, i) => (
-                        <div key={i} className="bg-white p-3 rounded-2xl shadow-sm border border-green-50">
-                          <span className="font-black text-green-600 block mb-1">{item.symbol}</span>
-                          <span className="text-xs text-slate-600 leading-relaxed">{item.reason}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* General Recommendations */}
-                {aiData.recommendations && (
-                  <div className="bg-blue-50 p-5 rounded-3xl shadow-sm border border-blue-100">
-                    <h3 className="text-sm font-bold text-blue-700 uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <Sparkles size={16} /> המלצות נוספות לתיק
-                    </h3>
-                    <ul className="space-y-2">
-                      {aiData.recommendations.map((rec, i) => (
-                        <li key={i} className="text-sm text-slate-700 flex items-start gap-2">
-                          <div className="mt-1 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></div>
-                          <span className="leading-relaxed font-medium">{rec}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
             )}
           </div>
