@@ -138,148 +138,129 @@ const App = () => {
     return () => unsubscribe();
   }, [user]);
 
-  // 2.5 Real Market Data Fetching (Ultra-robust with Batch Request & Fallbacks)
+  // 2.5 Real Market Data Fetching (Ultra-robust with Safe Parallel Fetch)
   const fetchMarketPrices = async () => {
     if (holdings.length === 0) return;
     setIsRefreshingPrices(true);
     const newMarketData = { ...marketData };
 
-    // פונקציית עזר לביצוע קריאות רשת עם גיבוי של פרוקסי נוסף למקרה של חסימות
-    const fetchProxy = async (url) => {
-      try {
-        const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
-        if (res.ok) return res;
-      } catch (e) {}
-      try {
-        const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}&_ts=${Date.now()}`);
-        if (res.ok) return res;
-      } catch (e) {}
-      throw new Error("All proxies failed");
-    };
-
-    // אוספים את כל הסימולים הקיימים הייחודיים
     const uniqueHoldings = Array.from(new Map(holdings.map(h => [h.symbol.trim().toUpperCase(), h])).values());
-    const missingHoldings = [];
-    const symbolMap = {};
 
-    // מכינים רשימת סימולים לבקשה אחת מרוכזת מול Yahoo
-    const yahooTickers = uniqueHoldings.map(h => {
-      let t = h.symbol.trim().toUpperCase();
-      if (h.currency === 'ILS' && !t.includes('.')) t += '.TA';
-      symbolMap[t] = h.symbol.trim().toUpperCase();
-      return t;
-    });
+    const fetchPromises = uniqueHoldings.map(async (h) => {
+      let ticker = h.symbol.trim().toUpperCase();
+      let currentPrice = null;
+      let prevClose = null;
+      let source = null;
 
-    // --- 1. Batch Request to Yahoo Quote API ---
-    // פעולה זו מונעת חסימות שכן היא שולחת רק פנייה אחת לשרת ומקבלת את כל המניות בבת אחת
-    try {
-      const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(yahooTickers.join(','))}`;
-      const res = await fetchProxy(targetUrl);
-      const data = await res.json();
-      const results = data?.quoteResponse?.result || [];
-      
-      results.forEach(quote => {
-        const originalSymbol = symbolMap[quote.symbol];
-        if (!originalSymbol) return;
-
-        const holding = uniqueHoldings.find(h => h.symbol.trim().toUpperCase() === originalSymbol);
-        if (!holding) return;
-
-        let currentPrice = quote.regularMarketPrice;
-        let prevClose = quote.regularMarketPreviousClose;
-
-        if (currentPrice !== undefined) {
-           if (holding.currency === 'ILS') {
-               currentPrice /= 100;
-               if (prevClose) prevClose /= 100;
-           }
-
-           const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
-           newMarketData[originalSymbol] = { currentPrice, dailyChangePct };
+      // --- 1. Yahoo Finance (Using /get to avoid CORS & Header issues) ---
+      try {
+        let yahooTicker = ticker;
+        if (h.currency === 'ILS' && !ticker.includes('.')) yahooTicker += '.TA';
+        
+        const targetUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?interval=1d&range=2d`;
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&disableCache=${Date.now()}`;
+        
+        const res = await fetch(proxyUrl);
+        const proxyData = await res.json();
+        
+        if (proxyData && proxyData.contents) {
+          const data = JSON.parse(proxyData.contents);
+          if (data?.chart?.result?.[0]) {
+            const result = data.chart.result[0];
+            currentPrice = result.meta.regularMarketPrice;
+            prevClose = result.meta.chartPreviousClose || result.meta.previousClose;
+            source = 'yahoo';
+          }
         }
-      });
-    } catch (e) {
-      console.warn("Batch Yahoo fetch failed", e);
-    }
-
-    // בודקים אילו מניות לא חזרו מ-Yahoo
-    uniqueHoldings.forEach(h => {
-      if (!newMarketData[h.symbol.trim().toUpperCase()]) {
-        missingHoldings.push(h);
+      } catch (e) {
+        console.warn(`Yahoo fetch failed for ${ticker}`);
       }
-    });
 
-    // --- 2. Fallbacks for Missing Holdings ---
-    if (missingHoldings.length > 0) {
-      const fallbackPromises = missingHoldings.map(async (h) => {
-        let ticker = h.symbol.trim().toUpperCase();
-        let currentPrice = null;
-        let prevClose = null;
-
-        // גיבוי 1: Google Finance
+      // --- 2. Google Finance Fallback ---
+      if (currentPrice === null || currentPrice === undefined) {
         try {
           const exchangesToTry = h.currency === 'ILS' ? ['TLV'] : ['NASDAQ', 'NYSE', 'AMEX', ''];
           for (let ex of exchangesToTry) {
             if (currentPrice !== null) break;
             const exStr = ex ? `:${ex}` : '';
             const targetUrl = `https://www.google.com/finance/quote/${encodeURIComponent(ticker)}${exStr}`;
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&disableCache=${Date.now()}`;
             
-            const res = await fetchProxy(targetUrl);
-            const html = await res.text();
+            const res = await fetch(proxyUrl);
+            const proxyData = await res.json();
             
-            let match = html.match(/data-last-price="([0-9.]+)"/);
-            if (!match) match = html.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
-            
-            if (match && match[1]) {
-              currentPrice = parseFloat(match[1].replace(/,/g, ''));
+            if (proxyData && proxyData.contents) {
+              const html = proxyData.contents;
+              let match = html.match(/data-last-price="([0-9.]+)"/);
+              if (!match) match = html.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
+              
+              if (match && match[1]) {
+                currentPrice = parseFloat(match[1].replace(/,/g, ''));
+                source = 'google';
+              }
             }
           }
-        } catch(e) {}
-
-        // גיבוי 2: Binance לקריפטו
-        if (currentPrice === null && h.currency === 'USD') {
-           try {
-              const targetUrl = `https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(ticker)}USDT`;
-              const res = await fetch(targetUrl);
-              if (res.ok) {
-                 const data = await res.json();
-                 if (data && data.lastPrice) {
-                    currentPrice = parseFloat(data.lastPrice);
-                    prevClose = parseFloat(data.prevClose);
-                 }
-              }
-           } catch(e) {}
+        } catch(e) {
+          console.warn(`Google fetch failed for ${ticker}`);
         }
+      }
 
-        if (currentPrice !== null && !isNaN(currentPrice)) {
-           const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
-           return { symbol: ticker, currentPrice, dailyChangePct };
+      // --- 3. Binance Crypto Fallback ---
+      if ((currentPrice === null || currentPrice === undefined) && h.currency === 'USD') {
+         try {
+            const targetUrl = `https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(ticker)}USDT`;
+            const res = await fetch(targetUrl);
+            if (res.ok) {
+               const data = await res.json();
+               if (data && data.lastPrice) {
+                  currentPrice = parseFloat(data.lastPrice);
+                  prevClose = parseFloat(data.prevClose);
+                  source = 'binance';
+               }
+            }
+         } catch(e) {
+           console.warn(`Binance fetch failed for ${ticker}`);
+         }
+      }
+
+      // --- Normalize Results ---
+      if (currentPrice !== null && currentPrice !== undefined && !isNaN(currentPrice)) {
+         if (h.currency === 'ILS' && source === 'yahoo') {
+             currentPrice /= 100;
+             if (prevClose) prevClose /= 100;
+         }
+
+         const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
+         return { symbol: ticker, currentPrice, dailyChangePct };
+      }
+      
+      return null;
+    });
+
+    const results = await Promise.all(fetchPromises);
+    let cacheUpdated = false;
+
+    results.forEach(res => {
+      if (res && res.symbol) {
+        const matchingHoldings = holdings.filter(h => h.symbol.trim().toUpperCase() === res.symbol);
+        if (matchingHoldings.length > 0) {
+           newMarketData[res.symbol] = {
+             currentPrice: res.currentPrice,
+             dailyChangePct: res.dailyChangePct
+           };
+           cacheUpdated = true;
         }
-        return null;
-      });
+      }
+    });
 
-      const fallbackResults = await Promise.all(fallbackPromises);
-      fallbackResults.forEach(res => {
-        if (res) {
-          newMarketData[res.symbol] = {
-            currentPrice: res.currentPrice,
-            dailyChangePct: res.dailyChangePct
-          };
-        }
-      });
-    }
-
-    let cacheUpdated = Object.keys(newMarketData).length > 0;
     setMarketData(newMarketData);
     setIsRefreshingPrices(false);
 
-    // Save to Firestore Cache so next time app loads it's instantly available
+    // Save to Firestore Cache
     if (cacheUpdated && user) {
       try {
         await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'), newMarketData);
-      } catch (e) {
-        console.warn("Failed to save market cache", e);
-      }
+      } catch (e) {}
     }
   };
 
