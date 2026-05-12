@@ -144,8 +144,8 @@ const App = () => {
     setIsRefreshingPrices(true);
     const newMarketData = { ...marketData };
 
-    // פונקציית עזר לפניות מהירות: אם השרת נתקע מעל X שניות, אנחנו חותכים ועוברים לגיבוי הבא מיד
-    const fetchWithTimeout = async (url, timeoutMs = 3500) => {
+    // פונקציית עזר לפניות: הגדלנו את הזמן כדי למנוע חיתוך מוקדם של בקשות שאורכות קצת יותר זמן
+    const fetchWithTimeout = async (url, timeoutMs = 8500) => {
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -180,7 +180,7 @@ const App = () => {
         const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?interval=1d&_ts=${timestamp}`;
         const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
 
-        const res = await fetchWithTimeout(proxyUrl, 3500); // הקצבה של 3.5 שניות
+        const res = await fetchWithTimeout(proxyUrl, 8500); // 8.5 seconds limit
         if (res.ok) {
           const data = await res.json();
           if (data?.chart?.result?.[0]) {
@@ -199,7 +199,7 @@ const App = () => {
           const targetUrl = `https://www.google.com/finance/quote/${encodeURIComponent(ticker)}${exchange}`;
           const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&_ts=${Date.now()}`;
           
-          const res = await fetchWithTimeout(proxyUrl, 3500); // הקצבה של 3.5 שניות
+          const res = await fetchWithTimeout(proxyUrl, 8500); // 8.5 seconds limit
           if (res.ok) {
             const html = await res.text();
             let match = html.match(/data-last-price="([0-9.]+)"/);
@@ -218,7 +218,7 @@ const App = () => {
       if (currentPrice === null && h.currency === 'USD') {
          try {
             const targetUrl = `https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(ticker)}USDT`;
-            const res = await fetchWithTimeout(targetUrl, 2500); // הקצבה של 2.5 שניות לקריפטו
+            const res = await fetchWithTimeout(targetUrl, 5000); // 5.0 seconds for Crypto API
             if (res.ok) {
                const data = await res.json();
                if (data && data.lastPrice) {
