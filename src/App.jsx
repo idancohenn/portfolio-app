@@ -45,7 +45,7 @@ const App = () => {
   const [error, setError] = useState(null);
 
   const [formData, setFormData] = useState({
-    symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD', sector: 'טכנולוגיה', platform: 'IBI SMART'
+    symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD', sector: 'טכנולוגיה', platform: 'IBI SMART', note: ''
   });
 
   // State for Editing
@@ -180,13 +180,11 @@ const App = () => {
       let prevClose = null;
 
       // 1. מניות אמריקאיות דרך Finnhub - עדיפות ראשונה! 
-      // הפתרון המקצועי שמונע התנגשויות (כמו DIA שהוא גם מטבע וגם מניה)
       if (h.currency === 'USD' && settings.finnhubKey) {
         try {
           const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`);
           if (res.ok) {
              const data = await res.json();
-             // Finnhub returns 0 if symbol is not found (or if it's a crypto token requested as a normal stock)
              if (data.c && data.c > 0) {
                 currentPrice = data.c;
                 prevClose = data.pc;
@@ -195,7 +193,7 @@ const App = () => {
         } catch(e) {}
       }
 
-      // 2. קריפטו דרך Binance (רק אם לא נמצאה מניה ב-Finnhub, או שאין עדיין מפתח)
+      // 2. קריפטו דרך Binance
       if (h.currency === 'USD' && currentPrice === null) {
         try {
           const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${ticker}USDT`);
@@ -213,7 +211,6 @@ const App = () => {
       if (currentPrice === null) {
         try {
           if (h.currency === 'ILS') {
-             // Yahoo Finance עבור מניות ישראליות
              let yahooTicker = ticker.includes('.') ? ticker : `${ticker}.TA`;
              const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?interval=1d`;
              const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`);
@@ -225,7 +222,6 @@ const App = () => {
                  }
              }
           } else {
-             // Google Finance גיבוי לארה"ב (למי שעדיין לא שם מפתח API או שהמניה לא ב-Finnhub)
              const exchanges = ['NASDAQ', 'NYSE', 'AMEX', ''];
              for (let ex of exchanges) {
                  if (currentPrice !== null) break;
@@ -246,7 +242,6 @@ const App = () => {
         }
       }
 
-      // שמירת התוצאה המוצלחת
       if (currentPrice !== null && !isNaN(currentPrice)) {
          const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
          return { symbol: ticker, currentPrice, dailyChangePct };
@@ -258,7 +253,6 @@ const App = () => {
     
     results.forEach(res => {
       if (res) {
-        // מתאים את התוצאה למחזיק המקורי (ללא רגישות לאותיות גדולות/קטנות או רווחים)
         const matchingHoldings = holdings.filter(h => h.symbol.trim().toUpperCase() === res.symbol);
         if (matchingHoldings.length > 0) {
            newMarketData[res.symbol] = {
@@ -273,7 +267,6 @@ const App = () => {
     setMarketData(newMarketData);
     setIsRefreshingPrices(false);
 
-    // Save to Firestore Cache so next time app loads it's instantly available
     if (cacheUpdated && user) {
       try {
         await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'), newMarketData);
@@ -281,7 +274,6 @@ const App = () => {
     }
   };
 
-  // Fetch prices automatically when holdings are loaded
   useEffect(() => {
     if (holdings.length > 0) {
       fetchMarketPrices();
@@ -305,7 +297,6 @@ const App = () => {
       const investedILS = isILS ? investedInCurrency : investedInCurrency * usdRate;
       totalInvestedILS += investedILS;
 
-      // Get real current price or fallback to avg price
       const mData = marketData[h.symbol.trim().toUpperCase()] || { currentPrice: avgPriceCalc, dailyChangePct: 0 };
       const currentInCurrency = h.quantity * mData.currentPrice;
       const currentILS = isILS ? currentInCurrency : currentInCurrency * usdRate;
@@ -316,11 +307,9 @@ const App = () => {
       if (isILS) localILS += currentILS;
       else foreignILS += currentILS;
 
-      // Trim to avoid duplicates caused by trailing spaces in older saved records
       const sectorName = (h.sector || 'אחר').trim();
       sectorMap[sectorName] = (sectorMap[sectorName] || 0) + currentILS;
 
-      // Daily Change calc
       const dailyChangeRatio = mData.dailyChangePct / 100;
       const prevDayValueILS = currentILS / (1 + dailyChangeRatio);
       dailyChangeILS += (currentILS - prevDayValueILS);
@@ -377,7 +366,6 @@ const App = () => {
     
     let text = "שלום, אני מבקש שתשמש כיועץ השקעות מומחה ותנתח את תיק ההשקעות שלי. אלו הנתונים המעודכנים של האחזקות שלי:\n\n";
     
-    // בונה את רשימת המניות
     const sortedForPrompt = [...holdings].sort((a, b) => a.symbol.localeCompare(b.symbol));
     sortedForPrompt.forEach(h => {
        const priceForCalc = h.currency === 'ILS' ? h.avgPrice / 100 : h.avgPrice;
@@ -430,16 +418,14 @@ const App = () => {
       };
 
       if (editingId) {
-        // Update existing
         await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'holdings', editingId), holdingData);
         setEditingId(null);
       } else {
-        // Add new
         await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'holdings', crypto.randomUUID()), holdingData);
       }
 
       setIsAdding(false);
-      setFormData({ symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD', sector: 'טכנולוגיה', platform: 'IBI SMART' });
+      setFormData({ symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD', sector: 'טכנולוגיה', platform: 'IBI SMART', note: '' });
     } catch (err) { setError("שגיאה בשמירת הנכס"); }
   };
 
@@ -460,7 +446,8 @@ const App = () => {
       avgPrice: holding.avgPrice,
       currency: holding.currency,
       sector: holding.sector,
-      platform: holding.platform
+      platform: holding.platform,
+      note: holding.note || ''
     });
     setEditingId(holding.id);
     setIsAdding(true);
@@ -469,7 +456,7 @@ const App = () => {
   const handleCloseModal = () => {
     setIsAdding(false);
     setEditingId(null);
-    setFormData({ symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD', sector: 'טכנולוגיה', platform: 'IBI SMART' });
+    setFormData({ symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD', sector: 'טכנולוגיה', platform: 'IBI SMART', note: '' });
   };
 
   const renderDonutChart = () => {
@@ -649,7 +636,7 @@ const App = () => {
                         
                         <div className="flex flex-col overflow-hidden text-right w-full">
                           <span className="font-extrabold text-slate-900 text-base leading-tight truncate">{h.symbol}</span>
-                          <span className="text-[8px] text-slate-400 font-bold uppercase truncate">{h.platform}</span>
+                          <span className="text-[8px] text-slate-400 font-bold truncate min-h-[12px]">{h.note || ''}</span>
                         </div>
 
                         <div className="flex items-center justify-between text-[10px] text-slate-500 bg-slate-50 border border-slate-100 px-1.5 py-1.5 rounded-[10px] w-full min-w-0">
@@ -687,21 +674,27 @@ const App = () => {
                       </div>
 
                       {isExpanded && (
-                        <div className="flex items-center justify-end gap-2 pt-2.5 mt-2.5 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
-                           <button 
-                             onClick={(e) => { e.stopPropagation(); openEditModal(h); setExpandedHoldingId(null); }} 
-                             className="px-4 py-1.5 text-[11px] font-bold text-slate-500 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-lg flex items-center gap-1.5 transition-colors"
-                           >
-                             <Edit2 size={12} />
-                             עריכה
-                           </button>
-                           <button 
-                             onClick={(e) => { e.stopPropagation(); deleteHolding(h.id); }} 
-                             className="px-4 py-1.5 text-[11px] font-bold text-slate-500 hover:text-red-600 bg-slate-50 hover:bg-red-50 rounded-lg flex items-center gap-1.5 transition-colors"
-                           >
-                             <Trash2 size={12} />
-                             מחיקה
-                           </button>
+                        <div className="flex items-center justify-between pt-2.5 mt-2.5 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
+                           <div className="text-[10px] font-bold text-slate-500 flex items-center gap-1.5 uppercase bg-slate-50 px-2 py-1 rounded-md">
+                             <Briefcase size={12} />
+                             {h.platform}
+                           </div>
+                           <div className="flex items-center gap-2">
+                             <button 
+                               onClick={(e) => { e.stopPropagation(); openEditModal(h); setExpandedHoldingId(null); }} 
+                               className="px-4 py-1.5 text-[11px] font-bold text-slate-500 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-lg flex items-center gap-1.5 transition-colors"
+                             >
+                               <Edit2 size={12} />
+                               עריכה
+                             </button>
+                             <button 
+                               onClick={(e) => { e.stopPropagation(); deleteHolding(h.id); }} 
+                               className="px-4 py-1.5 text-[11px] font-bold text-slate-500 hover:text-red-600 bg-slate-50 hover:bg-red-50 rounded-lg flex items-center gap-1.5 transition-colors"
+                             >
+                               <Trash2 size={12} />
+                               מחיקה
+                             </button>
+                           </div>
                         </div>
                       )}
                     </div>
@@ -945,6 +938,12 @@ const App = () => {
                   <option>IBI Trade</option>
                   <option>OneZero</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">הערה (אופציונלי)</label>
+                <input placeholder="לדוגמה: מחקה S&P 500" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                  value={formData.note || ''} onChange={e => setFormData({ ...formData, note: e.target.value })} />
               </div>
 
               <button type="submit" className="w-full bg-blue-600 text-white font-black text-lg py-4 rounded-2xl shadow-xl shadow-blue-200 active:scale-95 transition-all mt-4">
