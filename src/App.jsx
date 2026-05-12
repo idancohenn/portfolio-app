@@ -30,13 +30,16 @@ const App = () => {
   const [holdings, setHoldings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState('home'); // 'home', 'stats', 'ai'
 
-  const [settings, setSettings] = useState({ finnhubKey: '' });
+  // Settings State (API Keys)
+  const [settings, setSettings] = useState({ finnhubKey: '', fmpKey: '' });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
+  // Real-time Exchage Rate
   const [usdRate, setUsdRate] = useState(3.75);
 
+  // AI Prompt State
   const [generatedPrompt, setGeneratedPrompt] = useState("");
   const [isCopied, setIsCopied] = useState(false);
   const [error, setError] = useState(null);
@@ -45,13 +48,18 @@ const App = () => {
     symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD', sector: 'טכנולוגיה', platform: 'IBI SMART', note: ''
   });
 
+  // State for Editing
   const [editingId, setEditingId] = useState(null);
+  
+  // State for Expanding Holding Card Actions
   const [expandedHoldingId, setExpandedHoldingId] = useState(null);
 
+  // Real Market Data
   const [marketData, setMarketData] = useState({});
   const [isRefreshingPrices, setIsRefreshingPrices] = useState(false);
 
-  const [sortBy, setSortBy] = useState('value-desc');
+  // Sorting State
+  const [sortBy, setSortBy] = useState('value-desc'); // 'value-desc', 'value-asc', 'profit-desc', 'sector', 'platform'
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
 
   const sectors = ['שבבים', 'תוכנה', 'סייבר', 'פינטק', 'מדדים', 'אנרגיה', 'דאטה סנטרים', 'ביומד', 'פיננסים', 'אחר'];
@@ -65,6 +73,7 @@ const App = () => {
           await signInWithCustomToken(auth, __initial_auth_token);
         }
 
+        // Fetch Live USD/ILS Rate
         try {
           const res = await fetch('https://open.er-api.com/v6/latest/USD');
           const data = await res.json();
@@ -90,6 +99,7 @@ const App = () => {
   useEffect(() => {
     if (!user) return;
     
+    // Load Settings
     const fetchSettings = async () => {
       try {
         const docSnap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'config'));
@@ -99,6 +109,7 @@ const App = () => {
       } catch(e) {}
     };
     
+    // Load Cache
     const loadCache = async () => {
       try {
         const cacheSnap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'));
@@ -121,7 +132,7 @@ const App = () => {
     try {
       await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'config'), settings);
       setIsSettingsOpen(false);
-      fetchMarketPrices(); 
+      fetchMarketPrices(); // Trigger refresh to use new key immediately
     } catch(e) {
       setError("שגיאה בשמירת הגדרות API");
     }
@@ -154,56 +165,85 @@ const App = () => {
     return () => unsubscribe();
   }, [user]);
 
-  // 2.5 Real Market Data Fetching (With robust Proxy Fetcher)
+  // 2.5 Real Market Data Fetching (Pro Level with FMP and Finnhub Integration)
   const fetchMarketPrices = async () => {
     if (holdings.length === 0) return;
     setIsRefreshingPrices(true);
     const newMarketData = { ...marketData };
     let cacheUpdated = false;
 
-    // Helper: פונקציית פרוקסי חכמה המנסה מגוון שרתים במקרה של חסימות
-    const fetchThroughProxy = async (targetUrl) => {
-      const proxies = [
-          { type: 'allorigins', url: `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&_ts=${Date.now()}` },
-          { type: 'codetabs', url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}` }
-      ];
-
-      for (const proxy of proxies) {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 4500);
-          try {
-              const res = await fetch(proxy.url, { signal: controller.signal });
-              clearTimeout(timeoutId);
-              if (res.ok) {
-                  if (proxy.type === 'allorigins') {
-                      const data = await res.json();
-                      if (data.contents) return data.contents;
-                  } else {
-                      return await res.text();
-                  }
-              }
-          } catch(e) {
-              clearTimeout(timeoutId);
-          }
+    // Helper: Timeout fetcher
+    const fetchWithTimeout = async (url, timeoutMs = 4500) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+          const res = await fetch(url, { signal: controller.signal });
+          clearTimeout(id);
+          return res;
+      } catch(e) {
+          clearTimeout(id);
+          throw e;
       }
-      return null;
     };
 
     const uniqueHoldings = Array.from(new Map(holdings.map(h => [h.symbol.trim().toUpperCase(), h])).values());
 
+    // --- 1. הפתרון המקיף: FMP API (Financial Modeling Prep) ---
+    // אם הוגדר מפתח, נבקש את כל המניות (ישראל וארה"ב) בבקשה אחת מרוכזת ומהירה!
+    if (settings.fmpKey) {
+      const fmpSymbols = uniqueHoldings.map(h => {
+        let t = h.symbol.trim().toUpperCase();
+        if (h.currency === 'ILS' && !t.includes('.')) return `${t}.TA`; // מוסיף .TA עבור הבורסה בת"א
+        return t;
+      }).join(',');
+
+      try {
+        const res = await fetchWithTimeout(`https://financialmodelingprep.com/api/v3/quote/${fmpSymbols}?apikey=${settings.fmpKey}`, 5000);
+        if (res.ok) {
+          const data = await res.json();
+          data.forEach(item => {
+            // מנקה את ה-.TA כדי לחבר חזרה למניה שהוזנה באפליקציה
+            let originalSymbol = item.symbol.replace('.TA', '');
+            const holding = uniqueHoldings.find(h => 
+              h.symbol.trim().toUpperCase() === originalSymbol || 
+              h.symbol.trim().toUpperCase() === item.symbol
+            );
+            
+            if (holding) {
+              let currentPrice = item.price;
+              let prevClose = item.previousClose;
+              
+              // FMP מחזיר מניות וקרנות ישראליות באגורות, אז נמיר לשקלים
+              if (holding.currency === 'ILS') {
+                  currentPrice /= 100;
+                  if (prevClose) prevClose /= 100;
+              }
+              
+              const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
+              newMarketData[holding.symbol.trim().toUpperCase()] = { currentPrice, dailyChangePct };
+              cacheUpdated = true;
+            }
+          });
+        }
+      } catch(e) {
+        console.warn("FMP API fetch failed", e);
+      }
+    }
+
+    // --- 2. טיפול במניות שעדיין חסרות (גיבויים) ---
     const fetchPromises = uniqueHoldings.map(async (h) => {
       let ticker = h.symbol.trim().toUpperCase();
+      
+      // אם המניה כבר עודכנה דרך FMP, נדלג עליה
+      if (newMarketData[ticker]) return null;
+
       let currentPrice = null;
       let prevClose = null;
 
-      // 1. מניות אמריקאיות דרך Finnhub (גישה ישירה)
+      // 2.1: מניות אמריקאיות דרך Finnhub
       if (h.currency === 'USD' && settings.finnhubKey) {
         try {
-          const controller = new AbortController();
-          const id = setTimeout(() => controller.abort(), 4000);
-          const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`, { signal: controller.signal });
-          clearTimeout(id);
-          
+          const res = await fetchWithTimeout(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`, 4000);
           if (res.ok) {
              const data = await res.json();
              if (data.c && data.c > 0) {
@@ -214,14 +254,10 @@ const App = () => {
         } catch(e) {}
       }
 
-      // 2. קריפטו דרך Binance (גישה ישירה)
+      // 2.2: קריפטו דרך Binance
       if (h.currency === 'USD' && currentPrice === null) {
         try {
-          const controller = new AbortController();
-          const id = setTimeout(() => controller.abort(), 3000);
-          const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${ticker}USDT`, { signal: controller.signal });
-          clearTimeout(id);
-          
+          const res = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/24hr?symbol=${ticker}USDT`, 3000);
           if (res.ok) {
              const data = await res.json();
              if (data && data.lastPrice) {
@@ -232,88 +268,48 @@ const App = () => {
         } catch(e) {}
       }
 
-      // 3. גיבוי ומניות ישראל (דרך מנוע הפרוקסי החדש)
+      // 2.3: פתרונות גיבוי עוקפי-חסימות (Scraping)
       if (currentPrice === null) {
-        if (h.currency === 'ILS') {
-            const cleanTicker = ticker.replace('.TA', '');
-            const isNumeric = /^\d+$/.test(cleanTicker);
+        try {
+          if (h.currency === 'ILS') {
+             const cleanTicker = ticker.replace('.TA', '');
+             
+             // ניסיון מול Yahoo (לפעמים עובד למניות ישראליות גדולות)
+             try {
+                 const url = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanTicker}.TA?interval=1d`;
+                 const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&disableCache=${Date.now()}`;
+                 const res = await fetchWithTimeout(proxyUrl, 4000);
+                 if (res.ok) {
+                     const proxyData = await res.json();
+                     if (proxyData.contents) {
+                         const data = JSON.parse(proxyData.contents);
+                         if (data?.chart?.result?.[0]) {
+                             currentPrice = data.chart.result[0].meta.regularMarketPrice / 100;
+                             prevClose = data.chart.result[0].meta.chartPreviousClose / 100;
+                         }
+                     }
+                 }
+             } catch(e) {}
 
-            // 3.1: Bizportal API (מצוין לתעודות סל כמו 1146497)
-            if (currentPrice === null && isNumeric) {
-                try {
-                    const content = await fetchThroughProxy(`https://gw.bizportal.co.il/api/quote/paper/${cleanTicker}`);
-                    if (content) {
-                        const data = JSON.parse(content);
-                        if (data && data.lastRate > 0) {
-                            currentPrice = parseFloat(data.lastRate) / 100; // ממיר אגורות לשקלים
-                            prevClose = parseFloat(data.baseRate) / 100;
-                        }
-                    }
-                } catch(e) {}
-            }
-
-            // 3.2: Google Finance TLV
-            if (currentPrice === null) {
-                try {
-                    const content = await fetchThroughProxy(`https://www.google.com/finance/quote/${cleanTicker}:TLV`);
-                    if (content) {
-                        let match = content.match(/data-last-price="([0-9.]+)"/);
-                        if (!match) match = content.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
-                        if (match && match[1]) {
-                            currentPrice = parseFloat(match[1].replace(/,/g, ''));
-                            // גוגל מציג מניות ישראליות לרוב באגורות
-                            if (currentPrice > 1000 && isNumeric) currentPrice /= 100; 
-                        }
-                    }
-                } catch(e) {}
-            }
-
-            // 3.3: Yahoo Finance .TA גיבוי סופי לישראל
-            if (currentPrice === null) {
-                try {
-                    const content = await fetchThroughProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${cleanTicker}.TA?interval=1d`);
-                    if (content) {
-                        const data = JSON.parse(content);
-                        if (data?.chart?.result?.[0]) {
-                            currentPrice = data.chart.result[0].meta.regularMarketPrice / 100;
-                            prevClose = data.chart.result[0].meta.chartPreviousClose / 100;
-                        }
-                    }
-                } catch(e) {}
-            }
-
-        } else {
-            // גיבוי למניות אמריקאיות אם Finnhub נכשל או חסר מפתח
-            if (currentPrice === null) {
-                try {
-                    const content = await fetchThroughProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d`);
-                    if (content) {
-                        const data = JSON.parse(content);
-                        if (data?.chart?.result?.[0]) {
-                            currentPrice = data.chart.result[0].meta.regularMarketPrice;
-                            prevClose = data.chart.result[0].meta.chartPreviousClose;
-                        }
-                    }
-                } catch(e) {}
-            }
-
-            if (currentPrice === null) {
-                const exchanges = ['NASDAQ', 'NYSE', 'AMEX', ''];
-                for (let ex of exchanges) {
-                    if (currentPrice !== null) break;
-                    try {
-                        const content = await fetchThroughProxy(`https://www.google.com/finance/quote/${ticker}${ex ? ':'+ex : ''}`);
-                        if (content) {
-                            let match = content.match(/data-last-price="([0-9.]+)"/);
-                            if (!match) match = content.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
-                            if (match && match[1]) {
-                                currentPrice = parseFloat(match[1].replace(/,/g, ''));
-                            }
-                        }
-                    } catch(e) {}
-                }
-            }
-        }
+          } else {
+             // גיבוי לארה"ב דרך Yahoo
+             try {
+                 const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d`;
+                 const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&disableCache=${Date.now()}`;
+                 const res = await fetchWithTimeout(proxyUrl, 4000);
+                 if (res.ok) {
+                     const proxyData = await res.json();
+                     if (proxyData.contents) {
+                         const data = JSON.parse(proxyData.contents);
+                         if (data?.chart?.result?.[0]) {
+                             currentPrice = data.chart.result[0].meta.regularMarketPrice;
+                             prevClose = data.chart.result[0].meta.chartPreviousClose;
+                         }
+                     }
+                 }
+             } catch(e) {}
+          }
+        } catch(e) {}
       }
 
       if (currentPrice !== null && !isNaN(currentPrice) && currentPrice > 0) {
@@ -329,14 +325,11 @@ const App = () => {
     
     results.forEach(res => {
       if (res) {
-        const matchingHoldings = holdings.filter(h => h.symbol.trim().toUpperCase() === res.symbol);
-        if (matchingHoldings.length > 0) {
-           newMarketData[res.symbol] = {
-             currentPrice: res.currentPrice,
-             dailyChangePct: res.dailyChangePct
-           };
-           cacheUpdated = true;
-        }
+        newMarketData[res.symbol] = {
+          currentPrice: res.currentPrice,
+          dailyChangePct: res.dailyChangePct
+        };
+        cacheUpdated = true;
       }
     });
 
@@ -931,17 +924,33 @@ const App = () => {
             </div>
 
             <form onSubmit={handleSaveSettings} className="space-y-5 pb-2">
+              
               <div>
-                <label className="text-[12px] font-bold text-slate-800 uppercase tracking-wider mb-2 block">מפתח API למניות ארה"ב (Finnhub)</label>
+                <label className="text-[12px] font-bold text-slate-800 uppercase tracking-wider mb-2 block text-blue-600">
+                  חדש: מפתח למניות ארה״ב + ישראל (FMP) 🚀
+                </label>
                 <input 
-                  placeholder="הדבק כאן את מפתח ה-API החינמי..." 
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-sm"
+                  placeholder="הדבק כאן מפתח של Financial Modeling Prep" 
+                  className="w-full bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-sm"
+                  value={settings.fmpKey || ''} 
+                  onChange={e => setSettings({ ...settings, fmpKey: e.target.value.trim() })} 
+                />
+                <p className="text-[11px] text-slate-500 mt-2 font-medium leading-relaxed">
+                  הפתרון המומלץ והיציב ביותר שפותח את החסימות של בורסת תל אביב (ותעודות סל)! <br/>
+                  <a href="https://site.financialmodelingprep.com/developer/docs" target="_blank" rel="noreferrer" className="text-blue-600 underline font-bold">הירשם בחינם כאן</a>, לחץ על "Get your free API Key", והדבק אותו למעלה.
+                </p>
+              </div>
+
+              <div className="border-t border-slate-100 pt-5">
+                <label className="text-[12px] font-bold text-slate-800 uppercase tracking-wider mb-2 block text-slate-400">
+                  מפתח למניות ארה״ב (Finnhub) - גיבוי
+                </label>
+                <input 
+                  placeholder="הדבק כאן את מפתח ה-API של Finnhub" 
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-slate-400 font-bold text-sm text-slate-500"
                   value={settings.finnhubKey || ''} 
                   onChange={e => setSettings({ ...settings, finnhubKey: e.target.value.trim() })} 
                 />
-                <p className="text-[11px] text-slate-500 mt-3 font-medium leading-relaxed">
-                  בלי מפתח, המערכת מנסה לעקוף חסימות עם פרוקסי (ולרוב נחסמת). לחיבור יציב ב-100% ומהיר, <a href="https://finnhub.io/register" target="_blank" rel="noreferrer" className="text-blue-600 underline font-bold">הרשם בחינם ב-Finnhub</a>, והדבק כאן את ה-API Key שלך (מופיע שם בעמוד הראשי).
-                </p>
               </div>
 
               <button type="submit" className="w-full bg-slate-900 text-white font-black text-lg py-3.5 rounded-2xl shadow-xl active:scale-95 transition-all mt-4">
