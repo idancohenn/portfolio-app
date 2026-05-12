@@ -165,7 +165,7 @@ const App = () => {
     return () => unsubscribe();
   }, [user]);
 
-  // 2.5 Real Market Data Fetching (Pro Level with Finnhub Integration)
+  // 2.5 Real Market Data Fetching
   const fetchMarketPrices = async () => {
     if (holdings.length === 0) return;
     setIsRefreshingPrices(true);
@@ -179,7 +179,7 @@ const App = () => {
       let currentPrice = null;
       let prevClose = null;
 
-      // 1. מניות אמריקאיות דרך Finnhub - עדיפות ראשונה! 
+      // 1. מניות אמריקאיות דרך Finnhub - עדיפות ראשונה!
       if (h.currency === 'USD' && settings.finnhubKey) {
         try {
           const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`);
@@ -207,21 +207,77 @@ const App = () => {
         } catch(e) {}
       }
 
-      // 3. גיבוי + מניות ישראל דרך פרוקסי חזק
+      // 3. גיבוי ומניות ישראל
       if (currentPrice === null) {
         try {
           if (h.currency === 'ILS') {
-             let yahooTicker = ticker.includes('.') ? ticker : `${ticker}.TA`;
-             const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?interval=1d`;
-             const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`);
-             if (res.ok) {
-                 const data = await res.json();
-                 if (data?.chart?.result?.[0]) {
-                     currentPrice = data.chart.result[0].meta.regularMarketPrice / 100;
-                     prevClose = data.chart.result[0].meta.chartPreviousClose / 100;
+             const isNumeric = /^\d+$/.test(ticker);
+
+             // אופציה 3.1: Yahoo Finance
+             try {
+                 let yahooTicker = ticker.includes('.') ? ticker : `${ticker}.TA`;
+                 const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?interval=1d`;
+                 const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`);
+                 if (res.ok) {
+                     const data = await res.json();
+                     if (data?.chart?.result?.[0]) {
+                         currentPrice = data.chart.result[0].meta.regularMarketPrice / 100;
+                         prevClose = data.chart.result[0].meta.chartPreviousClose / 100;
+                     }
                  }
+             } catch(e) {}
+
+             // אופציה 3.2: Bizportal API (הפתרון לתעודות סל וקרנות מחקות - שולף באגורות)
+             if (currentPrice === null && isNumeric) {
+                 try {
+                     const url = `https://gw.bizportal.co.il/api/quote/paper/${ticker}`;
+                     const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`);
+                     if (res.ok) {
+                         const data = await res.json();
+                         if (data && data.lastRate !== undefined && data.lastRate > 0) {
+                             currentPrice = parseFloat(data.lastRate) / 100;
+                             prevClose = parseFloat(data.baseRate) / 100;
+                         }
+                     }
+                 } catch(e) {}
              }
+
+             // אופציה 3.3: Google Finance (גיבוי נוסף)
+             if (currentPrice === null) {
+                 try {
+                     const url = `https://www.google.com/finance/quote/${encodeURIComponent(ticker)}:TLV`;
+                     const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`);
+                     if (res.ok) {
+                         const html = await res.text();
+                         let match = html.match(/data-last-price="([0-9.]+)"/);
+                         if (!match) match = html.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
+                         if (match && match[1]) {
+                             currentPrice = parseFloat(match[1].replace(/,/g, ''));
+                         }
+                     }
+                 } catch(e) {}
+             }
+
+             // אופציה 3.4: Bizportal HTML Scraper (גיבוי סופי דרך סריקת העמוד שלהם)
+             if (currentPrice === null && isNumeric) {
+                 try {
+                     const url = `https://www.bizportal.co.il/quote/${ticker}`;
+                     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&disableCache=${Date.now()}`;
+                     const res = await fetch(proxyUrl);
+                     if (res.ok) {
+                         const proxyData = await res.json();
+                         if (proxyData && proxyData.contents) {
+                             let match = proxyData.contents.match(/"lastRate"\s*:\s*([0-9.]+)/i);
+                             if (match && match[1]) {
+                                 currentPrice = parseFloat(match[1]) / 100;
+                             }
+                         }
+                     }
+                 } catch(e) {}
+             }
+
           } else {
+             // Google Finance גיבוי לארה"ב (למי שאין Finnhub API)
              const exchanges = ['NASDAQ', 'NYSE', 'AMEX', ''];
              for (let ex of exchanges) {
                  if (currentPrice !== null) break;
