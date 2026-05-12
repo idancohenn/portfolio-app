@@ -529,10 +529,10 @@ const App = () => {
         {activeTab === 'home' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             {/* Total Balance Card */}
-            <div className="bg-slate-900 rounded-[28px] p-7 text-white shadow-2xl relative overflow-hidden">
+            <div className="bg-slate-900 rounded-[28px] p-7 text-white shadow-2xl relative overflow-hidden text-center">
               <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 pointer-events-none"></div>
               <p className="text-slate-300 text-sm font-medium mb-2 opacity-80">שווי תיק נוכחי</p>
-              <div className="flex items-baseline gap-2 mb-1">
+              <div className="flex justify-center items-baseline gap-2 mb-1">
                 <h2 className="text-4xl font-black tracking-tight">₪{stats.currentTotalILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h2>
               </div>
               <p className="text-lg text-slate-400 font-medium mb-6">${stats.currentTotalUSD.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
@@ -540,7 +540,7 @@ const App = () => {
               <div className="flex gap-4 border-t border-slate-700/50 pt-4">
                 <div className="flex-1">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">תשואה כוללת</p>
-                  <p className={`font-semibold text-sm flex items-center gap-1 ${stats.totalChangePct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <p className={`font-semibold text-sm flex justify-center items-center gap-1 ${stats.totalChangePct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {stats.totalChangePct >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                     ₪{Math.abs(stats.totalChangeILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     <span className="text-xs ml-1 opacity-80" dir="ltr">({stats.totalChangePct > 0 ? '+' : ''}{stats.totalChangePct.toFixed(2)}%)</span>
@@ -548,7 +548,7 @@ const App = () => {
                 </div>
                 <div className="flex-1 border-r border-slate-700/50 pr-4">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">שינוי יומי</p>
-                  <p className={`font-semibold text-sm flex items-center gap-1 ${stats.dailyChangePct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <p className={`font-semibold text-sm flex justify-center items-center gap-1 ${stats.dailyChangePct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {stats.dailyChangePct >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                     ₪{Math.abs(stats.dailyChangeILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     <span className="text-xs ml-1 opacity-80" dir="ltr">({stats.dailyChangePct > 0 ? '+' : ''}{stats.dailyChangePct.toFixed(2)}%)</span>
@@ -619,45 +619,45 @@ const App = () => {
                       onClick={() => setExpandedHoldingId(isExpanded ? null : h.id)}
                       className="bg-white px-3 py-2.5 rounded-[16px] shadow-sm border border-slate-100 flex flex-col transition-all active:scale-[0.98] cursor-pointer select-none"
                     >
-                      {/* Compact Single Row View */}
-                      <div className="flex justify-between items-center gap-2">
+                      {/* Compact Single Row View (Grid Layout for perfect alignment) */}
+                      <div className="grid grid-cols-[18%_1fr_28%] gap-2 items-center w-full">
                         
                         {/* Right: Symbol */}
-                        <div className="flex flex-col min-w-[3rem]">
-                          <span className="font-extrabold text-slate-900 text-base leading-tight">{h.symbol}</span>
+                        <div className="flex flex-col overflow-hidden text-right w-full">
+                          <span className="font-extrabold text-slate-900 text-base leading-tight truncate">{h.symbol}</span>
                           <span className="text-[8px] text-slate-400 font-bold uppercase truncate">{h.platform}</span>
                         </div>
 
                         {/* Middle: Compact Stats Box */}
-                        <div className="flex items-center justify-between text-[9px] text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1.5 rounded-[10px] flex-1 max-w-[150px]">
-                          <div className="flex flex-col items-center">
-                            <span className="opacity-80">כמות</span>
-                            <span className="font-bold text-slate-700">{h.quantity}</span>
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 bg-slate-50 border border-slate-100 px-1.5 py-1.5 rounded-[10px] w-full min-w-0">
+                          <div className="flex flex-col items-center flex-1 min-w-0">
+                            <span className="text-[8px] opacity-80 truncate">כמות</span>
+                            <span className="font-bold text-slate-700 truncate w-full text-center">{h.quantity}</span>
                           </div>
-                          <div className="w-px h-4 bg-slate-200"></div>
-                          <div className="flex flex-col items-center">
-                            <span className="opacity-80">קניה</span>
-                            <span className="font-bold text-slate-700">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                          <div className="w-px h-4 bg-slate-200 mx-1 shrink-0"></div>
+                          <div className="flex flex-col items-center flex-1 min-w-0">
+                            <span className="text-[8px] opacity-80 truncate">קניה</span>
+                            <span className="font-bold text-slate-700 truncate w-full text-center" dir="ltr">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                           </div>
-                          <div className="w-px h-4 bg-slate-200"></div>
-                          <div className="flex flex-col items-center">
-                            <span className="opacity-80">נוכחי</span>
-                            <span className="font-bold text-slate-700">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                          <div className="w-px h-4 bg-slate-200 mx-1 shrink-0"></div>
+                          <div className="flex flex-col items-center flex-1 min-w-0">
+                            <span className="text-[8px] opacity-80 truncate">נוכחי</span>
+                            <span className="font-bold text-slate-700 truncate w-full text-center" dir="ltr">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                           </div>
                         </div>
 
                         {/* Left: Total Value & Profit */}
-                        <div className="flex flex-col items-end min-w-[4rem]">
-                           <span className="font-black text-slate-900 text-sm leading-tight">
+                        <div className="flex flex-col items-end overflow-hidden w-full text-left">
+                           <span className="font-black text-slate-900 text-[13px] leading-tight truncate w-full text-left" dir="ltr">
                              ₪{totalValueILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                            </span>
-                           <div className="flex items-center gap-1 mt-0.5">
+                           <div className="flex items-center justify-end gap-1 mt-0.5 w-full flex-wrap">
                              {h.currency === 'USD' && (
-                               <span className="text-[9px] font-bold text-slate-400">
+                               <span className="text-[8.5px] font-bold text-slate-400 truncate">
                                  ${totalValueCurrency.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                </span>
                              )}
-                             <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${isProfit ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`} dir="ltr">
+                             <span className={`text-[9px] font-bold px-1 py-0.5 rounded shrink-0 ${isProfit ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`} dir="ltr">
                                 {isProfit ? '+' : ''}{totalChangePct.toFixed(1)}%
                              </span>
                            </div>
