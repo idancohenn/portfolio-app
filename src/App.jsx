@@ -7,7 +7,7 @@ import {
   Briefcase, ArrowUpRight, AlertCircle, TrendingDown,
   PieChart, LayoutGrid, X, Globe, ShieldAlert,
   ArrowRightLeft, Sparkles, Activity, ShieldCheck,
-  TrendingUp, Edit2, ArrowDownUp, Filter, LogOut, Copy, CheckCircle2
+  TrendingUp, Edit2, ArrowDownUp, Filter, LogOut, Copy, CheckCircle2, Settings
 } from 'lucide-react';
 
 // --- Firebase Configuration ---
@@ -31,6 +31,10 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [activeTab, setActiveTab] = useState('home'); // 'home', 'stats', 'ai'
+
+  // Settings State (API Keys)
+  const [settings, setSettings] = useState({ finnhubKey: '' });
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Real-time Exchage Rate
   const [usdRate, setUsdRate] = useState(3.75);
@@ -91,9 +95,21 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 1.5 Load Cached Market Data on Mount
+  // 1.5 Load Cached Market Data & User Settings
   useEffect(() => {
     if (!user) return;
+    
+    // Load Settings
+    const fetchSettings = async () => {
+      try {
+        const docSnap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'config'));
+        if (docSnap.exists()) {
+          setSettings(docSnap.data());
+        }
+      } catch(e) {}
+    };
+    
+    // Load Cache
     const loadCache = async () => {
       try {
         const cacheSnap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'));
@@ -103,12 +119,24 @@ const App = () => {
             return prev;
           });
         }
-      } catch (e) {
-        console.warn("Could not load market data cache", e);
-      }
+      } catch (e) {}
     };
+
+    fetchSettings();
     loadCache();
   }, [user]);
+
+  const handleSaveSettings = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'config'), settings);
+      setIsSettingsOpen(false);
+      fetchMarketPrices(); // Trigger refresh to use new key immediately
+    } catch(e) {
+      setError("שגיאה בשמירת הגדרות API");
+    }
+  };
 
   const handleGoogleLogin = async () => {
     setError(null);
@@ -137,142 +165,114 @@ const App = () => {
     return () => unsubscribe();
   }, [user]);
 
-  // 2.5 Real Market Data Fetching (Using Yahoo Spark API for Lightning Fast Batching)
+  // 2.5 Real Market Data Fetching (Pro Level with Finnhub Integration)
   const fetchMarketPrices = async () => {
     if (holdings.length === 0) return;
     setIsRefreshingPrices(true);
     const newMarketData = { ...marketData };
     let cacheUpdated = false;
 
-    // אוספים מניות ייחודיות
     const uniqueHoldings = Array.from(new Map(holdings.map(h => [h.symbol.trim().toUpperCase(), h])).values());
-    const yahooTickers = [];
-    const tickerToHolding = {};
 
-    uniqueHoldings.forEach(h => {
-      let t = h.symbol.trim().toUpperCase();
-      if (h.currency === 'ILS' && !t.includes('.')) t += '.TA';
-      yahooTickers.push(t);
-      tickerToHolding[t] = h;
-    });
+    const fetchPromises = uniqueHoldings.map(async (h) => {
+      let ticker = h.symbol.trim().toUpperCase();
+      let currentPrice = null;
+      let prevClose = null;
 
-    // מחלקים לקבוצות של 15 (ה-Spark API מטפל בזה בקלות)
-    const chunkSize = 15;
-    for (let i = 0; i < yahooTickers.length; i += chunkSize) {
-      const chunk = yahooTickers.slice(i, i + chunkSize);
-      
-      // שימוש ב-Spark API (מהיר בהרבה, לא נחסם, מחזיר JSON קומפקטי)
-      const targetUrl = `https://query2.finance.yahoo.com/v8/finance/spark?symbols=${encodeURIComponent(chunk.join(','))}&range=2d&interval=1d`;
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&_ts=${Date.now()}`;
-
-      try {
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), 6000); // 6 שניות טיימאאוט
-
-        const res = await fetch(proxyUrl, { signal: controller.signal });
-        clearTimeout(id);
-
-        if (res.ok) {
-          const data = await res.json();
-          const results = data?.spark?.result || [];
-
-          results.forEach(item => {
-            const originalSymbol = item.symbol.toUpperCase();
-            const holding = tickerToHolding[originalSymbol];
-            const meta = item.response?.[0]?.meta;
-
-            if (holding && meta && meta.regularMarketPrice !== undefined) {
-              let currentPrice = meta.regularMarketPrice;
-              let prevClose = meta.chartPreviousClose || meta.previousClose; // Spark API stores it here
-
-              // נרמול לישראל (אגורות לשקלים)
-              if (holding.currency === 'ILS') {
-                currentPrice /= 100;
-                if (prevClose) prevClose /= 100;
-              }
-
-              const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
-              newMarketData[holding.symbol.trim().toUpperCase()] = { currentPrice, dailyChangePct };
-              cacheUpdated = true;
-            }
-          });
-        }
-      } catch (e) {
-        console.warn("Yahoo Spark chunk failed:", chunk, e);
-      }
-    }
-
-    // מנגנון גיבוי (Fallback) למניות שלא התעדכנו דרך ה-Spark
-    const missingHoldings = uniqueHoldings.filter(h => !newMarketData[h.symbol.trim().toUpperCase()]);
-
-    if (missingHoldings.length > 0) {
-      const fallbackPromises = missingHoldings.map(async (h) => {
-        let ticker = h.symbol.trim().toUpperCase();
-        let currentPrice = null;
-        let prevClose = null;
-
-        // גיבוי 1: Google Finance
+      // 1. קריפטו דרך Binance (תמיד יציב, לא דורש מפתח, אין חסימות CORS)
+      if (h.currency === 'USD') {
         try {
-          const exchangesToTry = h.currency === 'ILS' ? ['TLV'] : ['NASDAQ', 'NYSE', 'AMEX', ''];
-          for (let ex of exchangesToTry) {
-            if (currentPrice !== null) break;
-            const exStr = ex ? `:${ex}` : '';
-            const targetUrl = `https://www.google.com/finance/quote/${encodeURIComponent(ticker)}${exStr}`;
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&_ts=${Date.now()}`;
-            
-            const controller = new AbortController();
-            const id = setTimeout(() => controller.abort(), 4000);
-            const res = await fetch(proxyUrl, { signal: controller.signal });
-            clearTimeout(id);
-
-            if (res.ok) {
-               const html = await res.text();
-               let match = html.match(/data-last-price="([0-9.]+)"/);
-               if (!match) match = html.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
-               if (match && match[1]) {
-                 currentPrice = parseFloat(match[1].replace(/,/g, ''));
-               }
-            }
+          const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${ticker}USDT`);
+          if (res.ok) {
+             const data = await res.json();
+             if (data && data.lastPrice) {
+                currentPrice = parseFloat(data.lastPrice);
+                prevClose = parseFloat(data.prevClose);
+             }
           }
         } catch(e) {}
+      }
 
-        // גיבוי 2: Binance לקריפטו
-        if (currentPrice === null && h.currency === 'USD') {
-           try {
-              const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(ticker)}USDT`);
-              if (res.ok) {
+      // 2. מניות אמריקאיות דרך Finnhub (הפתרון המקצועי, עובד ישיר ללא חסימות אם יש מפתח)
+      if (h.currency === 'USD' && currentPrice === null && settings.finnhubKey) {
+        try {
+          const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`);
+          if (res.ok) {
+             const data = await res.json();
+             // Finnhub returns 0 if symbol is not found
+             if (data.c && data.c > 0) {
+                currentPrice = data.c;
+                prevClose = data.pc;
+             }
+          }
+        } catch(e) {}
+      }
+
+      // 3. גיבוי + מניות ישראל דרך פרוקסי חזק (CodeTabs לא נחסם בקלות כמו AllOrigins)
+      if (currentPrice === null) {
+        try {
+          if (h.currency === 'ILS') {
+             // Yahoo Finance עבור מניות ישראליות
+             let yahooTicker = ticker.includes('.') ? ticker : `${ticker}.TA`;
+             const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?interval=1d`;
+             const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`);
+             if (res.ok) {
                  const data = await res.json();
-                 if (data && data.lastPrice) {
-                    currentPrice = parseFloat(data.lastPrice);
-                    prevClose = parseFloat(data.prevClose);
+                 if (data?.chart?.result?.[0]) {
+                     currentPrice = data.chart.result[0].meta.regularMarketPrice / 100;
+                     prevClose = data.chart.result[0].meta.chartPreviousClose / 100;
                  }
-              }
-           } catch(e) {}
+             }
+          } else {
+             // Google Finance גיבוי לארה"ב (למי שעדיין לא שם מפתח API)
+             const exchanges = ['NASDAQ', 'NYSE', 'AMEX', ''];
+             for (let ex of exchanges) {
+                 if (currentPrice !== null) break;
+                 const url = `https://www.google.com/finance/quote/${encodeURIComponent(ticker)}${ex ? ':'+ex : ''}`;
+                 const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`);
+                 if (res.ok) {
+                     const html = await res.text();
+                     let match = html.match(/data-last-price="([0-9.]+)"/);
+                     if (!match) match = html.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
+                     if (match && match[1]) {
+                         currentPrice = parseFloat(match[1].replace(/,/g, ''));
+                     }
+                 }
+             }
+          }
+        } catch(e) {
+           console.warn(`Failed fallback proxy for ${ticker}`);
         }
+      }
 
-        if (currentPrice !== null && !isNaN(currentPrice)) {
-           const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
-           return { symbol: ticker, currentPrice, dailyChangePct };
-        }
-        return null;
-      });
+      // שמירת התוצאה המוצלחת
+      if (currentPrice !== null && !isNaN(currentPrice)) {
+         const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
+         return { symbol: ticker, currentPrice, dailyChangePct };
+      }
+      return null;
+    });
 
-      const fallbackResults = await Promise.all(fallbackPromises);
-      fallbackResults.forEach(res => {
-        if (res) {
-          newMarketData[res.symbol] = {
-            currentPrice: res.currentPrice,
-            dailyChangePct: res.dailyChangePct
-          };
-          cacheUpdated = true;
+    const results = await Promise.all(fetchPromises);
+    
+    results.forEach(res => {
+      if (res) {
+        // מתאים את התוצאה למחזיק המקורי (ללא רגישות לאותיות גדולות/קטנות או רווחים)
+        const matchingHoldings = holdings.filter(h => h.symbol.trim().toUpperCase() === res.symbol);
+        if (matchingHoldings.length > 0) {
+           newMarketData[res.symbol] = {
+             currentPrice: res.currentPrice,
+             dailyChangePct: res.dailyChangePct
+           };
+           cacheUpdated = true;
         }
-      });
-    }
+      }
+    });
 
     setMarketData(newMarketData);
     setIsRefreshingPrices(false);
 
-    // עדכון מסד הנתונים כדי לשמור על המחירים החדשים (Cache)
+    // Save to Firestore Cache so next time app loads it's instantly available
     if (cacheUpdated && user) {
       try {
         await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'), newMarketData);
@@ -524,14 +524,23 @@ const App = () => {
               <ArrowRightLeft size={10} /> שער דולר רציף: ₪{usdRate.toFixed(3)}
             </p>
           </div>
-          <button
-            onClick={fetchMarketPrices}
-            disabled={isRefreshingPrices}
-            className="p-2 text-slate-400 hover:text-blue-600 transition-colors bg-slate-50 rounded-full disabled:opacity-50"
-            title="רענן מחירי שוק"
-          >
-            <RefreshCcw size={16} className={isRefreshingPrices ? "animate-spin text-blue-500" : ""} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-2 text-slate-400 hover:text-slate-600 transition-colors bg-slate-50 rounded-full"
+              title="הגדרות API"
+            >
+              <Settings size={16} />
+            </button>
+            <button
+              onClick={fetchMarketPrices}
+              disabled={isRefreshingPrices}
+              className="p-2 text-slate-400 hover:text-blue-600 transition-colors bg-slate-50 rounded-full disabled:opacity-50"
+              title="רענן מחירי שוק"
+            >
+              <RefreshCcw size={16} className={isRefreshingPrices ? "animate-spin text-blue-500" : ""} />
+            </button>
+          </div>
         </div>
         <div className="flex gap-2">
           <button onClick={handleLogout} className="bg-white text-slate-400 hover:text-red-500 border border-slate-100 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-colors">
@@ -840,6 +849,40 @@ const App = () => {
         </div>
       </nav>
 
+      {/* Settings Modal */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[32px] p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
+                <Settings size={24} className="text-blue-500" /> הגדרות API
+              </h3>
+              <button onClick={() => setIsSettingsOpen(false)} className="p-2 bg-slate-100 rounded-full text-slate-500 active:scale-90"><X size={20} /></button>
+            </div>
+
+            <form onSubmit={handleSaveSettings} className="space-y-5 pb-2">
+              <div>
+                <label className="text-[12px] font-bold text-slate-800 uppercase tracking-wider mb-2 block">מפתח API למניות ארה"ב (Finnhub)</label>
+                <input 
+                  placeholder="הדבק כאן את מפתח ה-API החינמי..." 
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-sm"
+                  value={settings.finnhubKey || ''} 
+                  onChange={e => setSettings({ ...settings, finnhubKey: e.target.value.trim() })} 
+                />
+                <p className="text-[11px] text-slate-500 mt-3 font-medium leading-relaxed">
+                  בלי מפתח, המערכת מנסה לעקוף חסימות עם פרוקסי (ולרוב נחסמת). לחיבור יציב ב-100% ומהיר, <a href="https://finnhub.io/register" target="_blank" rel="noreferrer" className="text-blue-600 underline font-bold">הרשם בחינם ב-Finnhub</a>, והדבק כאן את ה-API Key שלך (מופיע שם בעמוד הראשי).
+                </p>
+              </div>
+
+              <button type="submit" className="w-full bg-slate-900 text-white font-black text-lg py-3.5 rounded-2xl shadow-xl active:scale-95 transition-all mt-4">
+                שמור ועדכן מחירים
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Holding Bottom Sheet */}
       {isAdding && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-end justify-center">
           <div className="bg-white w-full max-w-md rounded-t-[32px] p-6 shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh] overflow-y-auto">
