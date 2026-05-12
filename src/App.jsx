@@ -411,11 +411,14 @@ const App = () => {
     }
   };
 
+  // התיקון שמונע את ה-Race Condition! 
+  // עכשיו הפונקציה תרוץ שוב רק אחרי שהמפתחות של Finnhub ו-FMP סיימו להיטען מ-Firebase
   useEffect(() => {
     if (holdings.length > 0) {
       fetchMarketPrices();
     }
-  }, [holdings.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [holdings.length, settings.finnhubKey, settings.fmpKey]);
 
   // 3. Complex Calculations
   const stats = useMemo(() => {
