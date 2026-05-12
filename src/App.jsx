@@ -162,7 +162,7 @@ const App = () => {
     return () => unsubscribe();
   }, [user]);
 
-  // 2.5 Real Market Data Fetching (Smart Routing: USD -> Finnhub, ILS -> FMP)
+  // 2.5 Real Market Data Fetching (Pro Level with Proxied FMP/Finnhub)
   const fetchMarketPrices = async () => {
     if (holdings.length === 0) return;
     setIsRefreshingPrices(true);
@@ -182,26 +182,23 @@ const App = () => {
       }
     };
 
+    // הפרוקסי שיציל אותנו משגיאות CORS של FMP בדפדפן
     const fetchThroughProxy = async (targetUrl) => {
+      const encodedUrl = encodeURIComponent(targetUrl);
       const proxies = [
-          { type: 'allorigins', url: `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&_ts=${Date.now()}` },
-          { type: 'corsproxy', url: `https://corsproxy.io/?${encodeURIComponent(targetUrl)}` },
-          { type: 'codetabs', url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}` }
+          `https://corsproxy.io/?${encodedUrl}`,
+          `https://api.allorigins.win/raw?url=${encodedUrl}&disableCache=${Date.now()}`,
+          `https://api.codetabs.com/v1/proxy?quest=${encodedUrl}`
       ];
 
-      for (const proxy of proxies) {
+      for (const proxyUrl of proxies) {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 4000);
           try {
-              const res = await fetch(proxy.url, { signal: controller.signal });
+              const res = await fetch(proxyUrl, { signal: controller.signal });
               clearTimeout(timeoutId);
               if (res.ok) {
-                  if (proxy.type === 'allorigins') {
-                      const data = await res.json();
-                      if (data.contents) return data.contents;
-                  } else {
-                      return await res.text();
-                  }
+                  return await res.text();
               }
           } catch(e) {
               clearTimeout(timeoutId);
@@ -212,7 +209,6 @@ const App = () => {
 
     const uniqueHoldings = Array.from(new Map(holdings.map(h => [h.symbol.trim().toUpperCase(), h])).values());
     
-    // חלוקה חכמה להורדת עומס והפרדת ספקי מידע:
     const usdHoldings = uniqueHoldings.filter(h => h.currency === 'USD');
     const ilsHoldings = uniqueHoldings.filter(h => h.currency === 'ILS');
 
@@ -221,9 +217,19 @@ const App = () => {
       const finnhubPromises = usdHoldings.map(async (h) => {
         let ticker = h.symbol.trim().toUpperCase();
         try {
-          const res = await fetchWithTimeout(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`, 4000);
-          if (res.ok) {
-             const data = await res.json();
+          const url = `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`;
+          let content = null;
+          
+          try {
+             const res = await fetchWithTimeout(url, 3000);
+             if (res.ok) content = await res.text();
+          } catch(e) {}
+
+          // אם חסמו אותנו ישירות, עוברים מיד לפרוקסי 
+          if (!content) content = await fetchThroughProxy(url);
+
+          if (content) {
+             const data = JSON.parse(content);
              if (data && !data.error && data.c && data.c > 0) {
                 const currentPrice = data.c;
                 const prevClose = data.pc;
@@ -237,7 +243,8 @@ const App = () => {
       await Promise.all(finnhubPromises);
     }
 
-    // --- 2. מניות ותעודות סל ישראל (ILS) נשלחות ל-FMP ---
+    // --- 2. מניות ותעודות סל ישראל (ILS) נשלחות ל-FMP דרך פרוקסי ---
+    // הפרוקסי מונע את שגיאת ה-CORS שחוסמת פניות ישירות ל-FMP בחשבונות חינמיים!
     if (settings.fmpKey && ilsHoldings.length > 0) {
       const fmpSymbols = ilsHoldings.map(h => {
         let t = h.symbol.trim().toUpperCase();
@@ -245,9 +252,11 @@ const App = () => {
       }).join(',');
 
       try {
-        const res = await fetchWithTimeout(`https://financialmodelingprep.com/api/v3/quote/${fmpSymbols}?apikey=${settings.fmpKey}`, 5000);
-        if (res.ok) {
-          const data = await res.json();
+        const url = `https://financialmodelingprep.com/api/v3/quote/${fmpSymbols}?apikey=${settings.fmpKey}`;
+        const content = await fetchThroughProxy(url);
+        
+        if (content) {
+          const data = JSON.parse(content);
           if (Array.isArray(data)) {
             data.forEach(item => {
               let originalSymbol = item.symbol.replace('.TA', '');
@@ -257,7 +266,6 @@ const App = () => {
               );
               
               if (holding) {
-                // FMP מחזיר תמיד אגורות עבור הבורסה הישראלית, נמיר הכל לשקלים
                 let currentPrice = item.price / 100;
                 let prevClose = item.previousClose ? item.previousClose / 100 : null;
                 
@@ -271,12 +279,11 @@ const App = () => {
           }
         }
       } catch(e) {
-        console.warn("FMP API fetch failed", e);
+        console.warn("FMP proxy fetch failed", e);
       }
     }
 
     // --- 3. טיפול במניות שעדיין חסרות (גיבויים וקריפטו) ---
-    // מסננים החוצה כל מה שכבר קיבלנו מ-FMP או מ-Finnhub
     const missingHoldings = uniqueHoldings.filter(h => !newMarketData[h.symbol.trim().toUpperCase()]);
 
     if (missingHoldings.length > 0) {
@@ -285,7 +292,7 @@ const App = () => {
         let currentPrice = null;
         let prevClose = null;
 
-        // 3.1: קריפטו דרך Binance (עבור USD שלא נמצא ב-Finnhub)
+        // 3.1: קריפטו דרך Binance 
         if (h.currency === 'USD') {
           try {
             const res = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/24hr?symbol=${ticker}USDT`, 3000);
@@ -299,11 +306,12 @@ const App = () => {
           } catch(e) {}
         }
 
-        // 3.2: מנועי סריקה כגיבוי לתעודות סל ומניות ישראליות (במידה ו-FMP לא הוגדר או נפל)
+        // 3.2: גיבויים לתעודות סל וישראליות (במידה ו-FMP לא עבד)
         if (currentPrice === null && h.currency === 'ILS') {
            const cleanTicker = ticker.replace('.TA', '');
            const isNumeric = /^\d+$/.test(cleanTicker);
            
+           // Bizportal (מעולה לתעודות סל מספריות)
            if (currentPrice === null && isNumeric) {
                try {
                    const content = await fetchThroughProxy(`https://gw.bizportal.co.il/api/quote/paper/${cleanTicker}`);
@@ -317,6 +325,7 @@ const App = () => {
                } catch(e) {}
            }
 
+           // Google TLV
            if (currentPrice === null) {
                try {
                    const content = await fetchThroughProxy(`https://www.google.com/finance/quote/${cleanTicker}:TLV`);
@@ -331,6 +340,7 @@ const App = () => {
                } catch(e) {}
            }
 
+           // Yahoo Israel
            if (currentPrice === null) {
                try {
                    let yahooTicker = ticker.includes('.') ? ticker : `${ticker}.TA`;
@@ -347,7 +357,7 @@ const App = () => {
            }
         }
 
-        // 3.3: מנועי סריקה כגיבוי למניות מארה"ב (במידה ו-Finnhub לא הוגדר או נפל)
+        // 3.3: גיבויים למניות ארה"ב
         if (currentPrice === null && h.currency === 'USD') {
            try {
                const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d`;
@@ -384,7 +394,6 @@ const App = () => {
            return { symbol: ticker, currentPrice, dailyChangePct };
         }
         
-        console.warn(`Could not update price for ${ticker}`);
         return null;
       });
 
@@ -411,8 +420,6 @@ const App = () => {
     }
   };
 
-  // התיקון שמונע את ה-Race Condition! 
-  // עכשיו הפונקציה תרוץ שוב רק אחרי שהמפתחות של Finnhub ו-FMP סיימו להיטען מ-Firebase
   useEffect(() => {
     if (holdings.length > 0) {
       fetchMarketPrices();
