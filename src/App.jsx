@@ -99,7 +99,6 @@ const App = () => {
         const cacheSnap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'));
         if (cacheSnap.exists()) {
           setMarketData(prev => {
-            // Apply cache only if we haven't fetched real fresh data yet
             if (Object.keys(prev).length === 0) return cacheSnap.data();
             return prev;
           });
@@ -138,125 +137,142 @@ const App = () => {
     return () => unsubscribe();
   }, [user]);
 
-  // 2.5 Real Market Data Fetching (Ultra-robust with Safe Parallel Fetch)
+  // 2.5 Real Market Data Fetching (Using Yahoo Spark API for Lightning Fast Batching)
   const fetchMarketPrices = async () => {
     if (holdings.length === 0) return;
     setIsRefreshingPrices(true);
     const newMarketData = { ...marketData };
+    let cacheUpdated = false;
 
+    // אוספים מניות ייחודיות
     const uniqueHoldings = Array.from(new Map(holdings.map(h => [h.symbol.trim().toUpperCase(), h])).values());
+    const yahooTickers = [];
+    const tickerToHolding = {};
 
-    const fetchPromises = uniqueHoldings.map(async (h) => {
-      let ticker = h.symbol.trim().toUpperCase();
-      let currentPrice = null;
-      let prevClose = null;
-      let source = null;
+    uniqueHoldings.forEach(h => {
+      let t = h.symbol.trim().toUpperCase();
+      if (h.currency === 'ILS' && !t.includes('.')) t += '.TA';
+      yahooTickers.push(t);
+      tickerToHolding[t] = h;
+    });
 
-      // --- 1. Yahoo Finance (Using /get to avoid CORS & Header issues) ---
+    // מחלקים לקבוצות של 15 (ה-Spark API מטפל בזה בקלות)
+    const chunkSize = 15;
+    for (let i = 0; i < yahooTickers.length; i += chunkSize) {
+      const chunk = yahooTickers.slice(i, i + chunkSize);
+      
+      // שימוש ב-Spark API (מהיר בהרבה, לא נחסם, מחזיר JSON קומפקטי)
+      const targetUrl = `https://query2.finance.yahoo.com/v8/finance/spark?symbols=${encodeURIComponent(chunk.join(','))}&range=2d&interval=1d`;
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&_ts=${Date.now()}`;
+
       try {
-        let yahooTicker = ticker;
-        if (h.currency === 'ILS' && !ticker.includes('.')) yahooTicker += '.TA';
-        
-        const targetUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?interval=1d&range=2d`;
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&disableCache=${Date.now()}`;
-        
-        const res = await fetch(proxyUrl);
-        const proxyData = await res.json();
-        
-        if (proxyData && proxyData.contents) {
-          const data = JSON.parse(proxyData.contents);
-          if (data?.chart?.result?.[0]) {
-            const result = data.chart.result[0];
-            currentPrice = result.meta.regularMarketPrice;
-            prevClose = result.meta.chartPreviousClose || result.meta.previousClose;
-            source = 'yahoo';
-          }
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), 6000); // 6 שניות טיימאאוט
+
+        const res = await fetch(proxyUrl, { signal: controller.signal });
+        clearTimeout(id);
+
+        if (res.ok) {
+          const data = await res.json();
+          const results = data?.spark?.result || [];
+
+          results.forEach(item => {
+            const originalSymbol = item.symbol.toUpperCase();
+            const holding = tickerToHolding[originalSymbol];
+            const meta = item.response?.[0]?.meta;
+
+            if (holding && meta && meta.regularMarketPrice !== undefined) {
+              let currentPrice = meta.regularMarketPrice;
+              let prevClose = meta.chartPreviousClose || meta.previousClose; // Spark API stores it here
+
+              // נרמול לישראל (אגורות לשקלים)
+              if (holding.currency === 'ILS') {
+                currentPrice /= 100;
+                if (prevClose) prevClose /= 100;
+              }
+
+              const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
+              newMarketData[holding.symbol.trim().toUpperCase()] = { currentPrice, dailyChangePct };
+              cacheUpdated = true;
+            }
+          });
         }
       } catch (e) {
-        console.warn(`Yahoo fetch failed for ${ticker}`);
+        console.warn("Yahoo Spark chunk failed:", chunk, e);
       }
+    }
 
-      // --- 2. Google Finance Fallback ---
-      if (currentPrice === null || currentPrice === undefined) {
+    // מנגנון גיבוי (Fallback) למניות שלא התעדכנו דרך ה-Spark
+    const missingHoldings = uniqueHoldings.filter(h => !newMarketData[h.symbol.trim().toUpperCase()]);
+
+    if (missingHoldings.length > 0) {
+      const fallbackPromises = missingHoldings.map(async (h) => {
+        let ticker = h.symbol.trim().toUpperCase();
+        let currentPrice = null;
+        let prevClose = null;
+
+        // גיבוי 1: Google Finance
         try {
           const exchangesToTry = h.currency === 'ILS' ? ['TLV'] : ['NASDAQ', 'NYSE', 'AMEX', ''];
           for (let ex of exchangesToTry) {
             if (currentPrice !== null) break;
             const exStr = ex ? `:${ex}` : '';
             const targetUrl = `https://www.google.com/finance/quote/${encodeURIComponent(ticker)}${exStr}`;
-            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&disableCache=${Date.now()}`;
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&_ts=${Date.now()}`;
             
-            const res = await fetch(proxyUrl);
-            const proxyData = await res.json();
-            
-            if (proxyData && proxyData.contents) {
-              const html = proxyData.contents;
-              let match = html.match(/data-last-price="([0-9.]+)"/);
-              if (!match) match = html.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
-              
-              if (match && match[1]) {
-                currentPrice = parseFloat(match[1].replace(/,/g, ''));
-                source = 'google';
-              }
-            }
-          }
-        } catch(e) {
-          console.warn(`Google fetch failed for ${ticker}`);
-        }
-      }
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), 4000);
+            const res = await fetch(proxyUrl, { signal: controller.signal });
+            clearTimeout(id);
 
-      // --- 3. Binance Crypto Fallback ---
-      if ((currentPrice === null || currentPrice === undefined) && h.currency === 'USD') {
-         try {
-            const targetUrl = `https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(ticker)}USDT`;
-            const res = await fetch(targetUrl);
             if (res.ok) {
-               const data = await res.json();
-               if (data && data.lastPrice) {
-                  currentPrice = parseFloat(data.lastPrice);
-                  prevClose = parseFloat(data.prevClose);
-                  source = 'binance';
+               const html = await res.text();
+               let match = html.match(/data-last-price="([0-9.]+)"/);
+               if (!match) match = html.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
+               if (match && match[1]) {
+                 currentPrice = parseFloat(match[1].replace(/,/g, ''));
                }
             }
-         } catch(e) {
-           console.warn(`Binance fetch failed for ${ticker}`);
-         }
-      }
+          }
+        } catch(e) {}
 
-      // --- Normalize Results ---
-      if (currentPrice !== null && currentPrice !== undefined && !isNaN(currentPrice)) {
-         if (h.currency === 'ILS' && source === 'yahoo') {
-             currentPrice /= 100;
-             if (prevClose) prevClose /= 100;
-         }
-
-         const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
-         return { symbol: ticker, currentPrice, dailyChangePct };
-      }
-      
-      return null;
-    });
-
-    const results = await Promise.all(fetchPromises);
-    let cacheUpdated = false;
-
-    results.forEach(res => {
-      if (res && res.symbol) {
-        const matchingHoldings = holdings.filter(h => h.symbol.trim().toUpperCase() === res.symbol);
-        if (matchingHoldings.length > 0) {
-           newMarketData[res.symbol] = {
-             currentPrice: res.currentPrice,
-             dailyChangePct: res.dailyChangePct
-           };
-           cacheUpdated = true;
+        // גיבוי 2: Binance לקריפטו
+        if (currentPrice === null && h.currency === 'USD') {
+           try {
+              const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(ticker)}USDT`);
+              if (res.ok) {
+                 const data = await res.json();
+                 if (data && data.lastPrice) {
+                    currentPrice = parseFloat(data.lastPrice);
+                    prevClose = parseFloat(data.prevClose);
+                 }
+              }
+           } catch(e) {}
         }
-      }
-    });
+
+        if (currentPrice !== null && !isNaN(currentPrice)) {
+           const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
+           return { symbol: ticker, currentPrice, dailyChangePct };
+        }
+        return null;
+      });
+
+      const fallbackResults = await Promise.all(fallbackPromises);
+      fallbackResults.forEach(res => {
+        if (res) {
+          newMarketData[res.symbol] = {
+            currentPrice: res.currentPrice,
+            dailyChangePct: res.dailyChangePct
+          };
+          cacheUpdated = true;
+        }
+      });
+    }
 
     setMarketData(newMarketData);
     setIsRefreshingPrices(false);
 
-    // Save to Firestore Cache
+    // עדכון מסד הנתונים כדי לשמור על המחירים החדשים (Cache)
     if (cacheUpdated && user) {
       try {
         await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'), newMarketData);
@@ -289,7 +305,7 @@ const App = () => {
       totalInvestedILS += investedILS;
 
       // Get real current price or fallback to avg price
-      const mData = marketData[h.symbol] || { currentPrice: avgPriceCalc, dailyChangePct: 0 };
+      const mData = marketData[h.symbol.trim().toUpperCase()] || { currentPrice: avgPriceCalc, dailyChangePct: 0 };
       const currentInCurrency = h.quantity * mData.currentPrice;
       const currentILS = isILS ? currentInCurrency : currentInCurrency * usdRate;
 
@@ -334,8 +350,8 @@ const App = () => {
       const priceCalcA = a.currency === 'ILS' ? a.avgPrice / 100 : a.avgPrice;
       const priceCalcB = b.currency === 'ILS' ? b.avgPrice / 100 : b.avgPrice;
 
-      const mDataA = marketData[a.symbol] || { currentPrice: priceCalcA };
-      const mDataB = marketData[b.symbol] || { currentPrice: priceCalcB };
+      const mDataA = marketData[a.symbol.trim().toUpperCase()] || { currentPrice: priceCalcA };
+      const mDataB = marketData[b.symbol.trim().toUpperCase()] || { currentPrice: priceCalcB };
 
       const valueA_ILS = a.currency === 'ILS' ? (a.quantity * mDataA.currentPrice) : (a.quantity * mDataA.currentPrice * usdRate);
       const valueB_ILS = b.currency === 'ILS' ? (b.quantity * mDataB.currentPrice) : (b.quantity * mDataB.currentPrice * usdRate);
@@ -364,7 +380,7 @@ const App = () => {
     const sortedForPrompt = [...holdings].sort((a, b) => a.symbol.localeCompare(b.symbol));
     sortedForPrompt.forEach(h => {
        const priceForCalc = h.currency === 'ILS' ? h.avgPrice / 100 : h.avgPrice;
-       const mData = marketData[h.symbol] || { currentPrice: priceForCalc };
+       const mData = marketData[h.symbol.trim().toUpperCase()] || { currentPrice: priceForCalc };
        const currentPrice = mData.currentPrice;
        const symbolCurrency = h.currency === 'USD' ? '$' : '₪';
        const profitPct = priceForCalc > 0 ? ((currentPrice - priceForCalc) / priceForCalc) * 100 : 0;
@@ -386,7 +402,6 @@ const App = () => {
   };
 
   const copyToClipboard = () => {
-    // יצירת אלמנט זמני להעתקה שעובד בכל הדפדפנים כולל סביבות מבודדות
     const textArea = document.createElement("textarea");
     textArea.value = generatedPrompt;
     document.body.appendChild(textArea);
@@ -456,7 +471,6 @@ const App = () => {
     setFormData({ symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD', sector: 'טכנולוגיה', platform: 'IBI SMART' });
   };
 
-  // SVG Donut Chart Generator
   const renderDonutChart = () => {
     let cumulativePercent = 0;
     return (
@@ -502,7 +516,6 @@ const App = () => {
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans pb-24" dir="rtl">
 
-      {/* Top App Bar */}
       <header className="bg-white px-5 py-4 flex items-center justify-between shadow-[0_2px_10px_-4px_rgba(0,0,0,0.1)] sticky top-0 z-20">
         <div className="flex items-center gap-3">
           <div>
@@ -532,10 +545,8 @@ const App = () => {
 
       <main className="px-4 py-6 max-w-md mx-auto">
 
-        {/* --- TAB 1: HOME (PORTFOLIO) --- */}
         {activeTab === 'home' && (
           <div className="space-y-6 animate-in fade-in duration-300">
-            {/* Total Balance Card */}
             <div className="bg-slate-900 rounded-[28px] p-7 text-white shadow-2xl relative overflow-hidden text-center">
               <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 pointer-events-none"></div>
               <p className="text-slate-300 text-sm font-medium mb-2 opacity-80">שווי תיק נוכחי</p>
@@ -564,7 +575,6 @@ const App = () => {
               </div>
             </div>
 
-            {/* Holdings List Header & Sort */}
             <div className="flex items-center justify-between px-1">
               <h3 className="font-bold text-slate-800 text-lg">האחזקות שלי</h3>
               <div className="relative">
@@ -598,7 +608,6 @@ const App = () => {
               </div>
             </div>
 
-            {/* Holdings List (Compact Design) */}
             {holdings.length === 0 ? (
               <div className="bg-white rounded-3xl p-8 text-center shadow-sm border border-slate-100 mt-4">
                 <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
@@ -611,7 +620,7 @@ const App = () => {
               <div className="space-y-2">
                 {sortedHoldings.map(h => {
                   const priceForCalc = h.currency === 'ILS' ? h.avgPrice / 100 : h.avgPrice;
-                  const mData = marketData[h.symbol] || { currentPrice: priceForCalc, dailyChangePct: 0 };
+                  const mData = marketData[h.symbol.trim().toUpperCase()] || { currentPrice: priceForCalc, dailyChangePct: 0 };
                   const currentPrice = mData.currentPrice;
                   const totalChangePct = priceForCalc > 0 ? ((currentPrice - priceForCalc) / priceForCalc) * 100 : 0;
                   const isProfit = totalChangePct >= 0;
@@ -626,16 +635,13 @@ const App = () => {
                       onClick={() => setExpandedHoldingId(isExpanded ? null : h.id)}
                       className="bg-white px-3 py-2.5 rounded-[16px] shadow-sm border border-slate-100 flex flex-col transition-all active:scale-[0.98] cursor-pointer select-none"
                     >
-                      {/* Compact Single Row View (Grid Layout for perfect alignment) */}
                       <div className="grid grid-cols-[18%_1fr_28%] gap-2 items-center w-full">
                         
-                        {/* Right: Symbol */}
                         <div className="flex flex-col overflow-hidden text-right w-full">
                           <span className="font-extrabold text-slate-900 text-base leading-tight truncate">{h.symbol}</span>
                           <span className="text-[8px] text-slate-400 font-bold uppercase truncate">{h.platform}</span>
                         </div>
 
-                        {/* Middle: Compact Stats Box */}
                         <div className="flex items-center justify-between text-[10px] text-slate-500 bg-slate-50 border border-slate-100 px-1.5 py-1.5 rounded-[10px] w-full min-w-0">
                           <div className="flex flex-col items-center flex-1 min-w-0">
                             <span className="text-[8px] opacity-80 truncate">כמות</span>
@@ -653,7 +659,6 @@ const App = () => {
                           </div>
                         </div>
 
-                        {/* Left: Total Value & Profit */}
                         <div className="flex flex-col items-end overflow-hidden w-full text-left">
                            <span className="font-black text-slate-900 text-[13px] leading-tight truncate w-full text-left" dir="ltr">
                              ₪{totalValueILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -671,7 +676,6 @@ const App = () => {
                         </div>
                       </div>
 
-                      {/* Expanded Actions (Toggle) */}
                       {isExpanded && (
                         <div className="flex items-center justify-end gap-2 pt-2.5 mt-2.5 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
                            <button 
@@ -698,12 +702,10 @@ const App = () => {
           </div>
         )}
 
-        {/* --- TAB 2: ANALYTICS (STATS) --- */}
         {activeTab === 'stats' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             <h2 className="text-2xl font-black text-slate-800 mb-2">פילוח התיק</h2>
 
-            {/* Donut Chart Card */}
             <div className="bg-white p-6 rounded-[28px] shadow-sm border border-slate-100">
               <h3 className="font-bold text-slate-600 mb-6 flex items-center gap-2"><PieChart size={18} /> פיזור סקטוריאלי</h3>
 
@@ -736,7 +738,6 @@ const App = () => {
               )}
             </div>
 
-            {/* Geo Distribution Card */}
             <div className="bg-white p-6 rounded-[28px] shadow-sm border border-slate-100">
               <h3 className="font-bold text-slate-600 mb-6 flex items-center gap-2"><Globe size={18} /> חשיפה גיאוגרפית</h3>
 
@@ -763,7 +764,6 @@ const App = () => {
           </div>
         )}
 
-        {/* --- TAB 3: AI ADVISOR PROMPT GENERATOR --- */}
         {activeTab === 'ai' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="bg-gradient-to-br from-indigo-900 to-purple-900 rounded-[28px] p-6 text-white shadow-xl">
@@ -823,7 +823,6 @@ const App = () => {
         )}
       </main>
 
-      {/* --- BOTTOM NAVIGATION BAR --- */}
       <nav className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-xl border-t border-slate-200 pb-safe pt-2 px-6 z-30">
         <div className="max-w-md mx-auto flex justify-between items-center pb-4">
           <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 p-2 ${activeTab === 'home' ? 'text-blue-600' : 'text-slate-400'}`}>
@@ -841,7 +840,6 @@ const App = () => {
         </div>
       </nav>
 
-      {/* Add Holding Bottom Sheet */}
       {isAdding && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-end justify-center">
           <div className="bg-white w-full max-w-md rounded-t-[32px] p-6 shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh] overflow-y-auto">
@@ -913,7 +911,6 @@ const App = () => {
         </div>
       )}
 
-      {/* Error Toast */}
       {error && (
         <div className="fixed top-20 left-4 right-4 bg-red-600 text-white p-4 rounded-2xl flex items-center gap-3 shadow-2xl z-50 animate-in slide-in-from-top-full">
           <AlertCircle size={20} />
