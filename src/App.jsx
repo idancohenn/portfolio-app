@@ -144,7 +144,7 @@ const App = () => {
     setIsRefreshingPrices(true);
     const newMarketData = { ...marketData };
 
-    const fetchWithTimeout = async (url, timeoutMs = 6000) => {
+    const fetchWithTimeout = async (url, timeoutMs = 6500) => {
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -166,28 +166,26 @@ const App = () => {
       let dailyChangePct = 0;
       let source = '';
 
-      // --- מקור 1: Yahoo Finance (Safe JSON Wrapper) ---
+      // --- מקור 1: Yahoo Finance (Safe Raw Fetch) ---
       try {
         let yahooTicker = ticker;
         if (h.currency === 'ILS' && !ticker.includes('.')) {
           yahooTicker += '.TA';
         }
         
-        const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?range=1d&interval=1d`;
-        // Use /get to prevent CORS origin blocking on redirects
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&disableCache=true`;
+        // Using query2 and an extended range just to be safe
+        const targetUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?interval=1d&range=2d`;
+        // Using raw mode to avoid parsing errors (Yahoo API doesn't redirect so raw is perfectly safe here)
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&_ts=${Date.now()}`;
 
-        const res = await fetchWithTimeout(proxyUrl, 5000);
+        const res = await fetchWithTimeout(proxyUrl, 5500);
         if (res.ok) {
-          const proxyData = await res.json();
-          if (proxyData.contents) {
-            const data = JSON.parse(proxyData.contents);
-            if (data?.chart?.result?.[0]) {
-              const result = data.chart.result[0];
-              currentPrice = result.meta.regularMarketPrice;
-              prevClose = result.meta.chartPreviousClose || result.meta.previousClose;
-              source = 'yahoo';
-            }
+          const data = await res.json();
+          if (data?.chart?.result?.[0]) {
+            const result = data.chart.result[0];
+            currentPrice = result.meta.regularMarketPrice;
+            prevClose = result.meta.chartPreviousClose || result.meta.previousClose;
+            source = 'yahoo';
           }
         }
       } catch (e) { console.warn(`Yahoo Error for ${ticker}:`, e); }
@@ -201,13 +199,14 @@ const App = () => {
             try {
               const exStr = ex ? `:${ex}` : '';
               const targetUrl = `https://www.google.com/finance/quote/${encodeURIComponent(ticker)}${exStr}`;
+              // Google redirects sometimes, so /get is safer here
               const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&disableCache=true`;
               
               const res = await fetchWithTimeout(proxyUrl, 4500);
               if (res.ok) {
                 const proxyData = await res.json();
                 const html = proxyData.contents;
-                if (!html) continue;
+                if (!html || typeof html !== 'string') continue;
 
                 let match = html.match(/data-last-price="([0-9.]+)"/);
                 if (!match) {
