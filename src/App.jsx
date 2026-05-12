@@ -144,6 +144,20 @@ const App = () => {
     setIsRefreshingPrices(true);
     const newMarketData = { ...marketData };
 
+    // פונקציית עזר לפניות מהירות: אם השרת נתקע מעל X שניות, אנחנו חותכים ועוברים לגיבוי הבא מיד
+    const fetchWithTimeout = async (url, timeoutMs = 3500) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(id);
+        return res;
+      } catch (err) {
+        clearTimeout(id);
+        throw err;
+      }
+    };
+
     // Get unique symbols to avoid duplicate requests
     const uniqueHoldings = Array.from(new Map(holdings.map(h => [h.symbol, h])).values());
 
@@ -151,7 +165,9 @@ const App = () => {
     const fetchPromises = uniqueHoldings.map(async (h) => {
       let ticker = h.symbol.toUpperCase();
       let currentPrice = null;
+      let prevClose = null;
       let dailyChangePct = 0;
+      let source = '';
 
       // מקור 1: Yahoo Finance
       try {
@@ -164,62 +180,64 @@ const App = () => {
         const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?interval=1d&_ts=${timestamp}`;
         const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
 
-        const res = await fetch(proxyUrl);
+        const res = await fetchWithTimeout(proxyUrl, 3500); // הקצבה של 3.5 שניות
         if (res.ok) {
           const data = await res.json();
           if (data?.chart?.result?.[0]) {
             const result = data.chart.result[0];
             currentPrice = result.meta.regularMarketPrice;
-            let prevClose = result.meta.chartPreviousClose || result.meta.previousClose;
-
-            if (h.currency === 'ILS') {
-              currentPrice /= 100;
-              prevClose /= 100;
-            }
-            dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
+            prevClose = result.meta.chartPreviousClose || result.meta.previousClose;
+            source = 'yahoo';
           }
         }
       } catch (e) { }
 
-      // מקור 2: גיבוי - Google Finance (מצוין לקרנות ישראליות ולתעודות סל כמו 1148907)
+      // מקור 2: גיבוי עמיד - Google Finance
       if (currentPrice === null) {
         try {
-          // עבור ישראל משתמשים בקידומת TLV, אחרת ננסה NASDAQ
-          const exchange = h.currency === 'ILS' ? 'TLV' : 'NASDAQ';
-          const targetUrl = `https://www.google.com/finance/quote/${encodeURIComponent(ticker)}:${exchange}`;
-          const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+          const exchange = h.currency === 'ILS' ? ':TLV' : '';
+          const targetUrl = `https://www.google.com/finance/quote/${encodeURIComponent(ticker)}${exchange}`;
+          const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&_ts=${Date.now()}`;
           
-          const res = await fetch(proxyUrl);
+          const res = await fetchWithTimeout(proxyUrl, 3500); // הקצבה של 3.5 שניות
           if (res.ok) {
             const html = await res.text();
-            // Google Finance מחזיק את המחיר בתוך המאפיין data-last-price
-            const match = html.match(/data-last-price="([0-9.]+)"/);
+            let match = html.match(/data-last-price="([0-9.]+)"/);
+            if (!match) {
+              match = html.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
+            }
             if (match && match[1]) {
-              currentPrice = parseFloat(match[1]);
-              if (h.currency === 'ILS') {
-                currentPrice /= 100; // המרה מאגורות לשקלים
-              }
+              currentPrice = parseFloat(match[1].replace(/,/g, ''));
+              source = 'google';
             }
           }
         } catch (e) { }
       }
 
-      // מקור 3: גיבוי למטבעות קריפטו (Binance API) - במקרה שהסימול הוא קריפטו ואין ביהאוו
+      // מקור 3: גיבוי למטבעות קריפטו (Binance API)
       if (currentPrice === null && h.currency === 'USD') {
          try {
-            const targetUrl = `https://api.binance.com/api/v3/ticker/price?symbol=${encodeURIComponent(ticker)}USDT`;
-            const res = await fetch(targetUrl);
+            const targetUrl = `https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(ticker)}USDT`;
+            const res = await fetchWithTimeout(targetUrl, 2500); // הקצבה של 2.5 שניות לקריפטו
             if (res.ok) {
                const data = await res.json();
-               if (data && data.price) {
-                  currentPrice = parseFloat(data.price);
+               if (data && data.lastPrice) {
+                  currentPrice = parseFloat(data.lastPrice);
+                  prevClose = parseFloat(data.prevClose);
+                  source = 'binance';
                }
             }
          } catch (e) { }
       }
 
-      // אם מצאנו מחיר באחד המקורות נחזיר אותו
+      // חישובים ונרמול המחירים
       if (currentPrice !== null) {
+         if (h.currency === 'ILS' && source === 'yahoo') {
+             currentPrice /= 100;
+             if (prevClose) prevClose /= 100;
+         }
+
+         dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
          return {
             symbol: h.symbol,
             currentPrice: currentPrice,
@@ -227,7 +245,7 @@ const App = () => {
          };
       }
 
-      console.warn(`לא הצלחנו למצוא נתונים עבור ${h.symbol} באף מקור.`);
+      console.warn(`לא הצלחנו למצוא נתונים עבור ${h.symbol}`);
       return null;
     });
 
