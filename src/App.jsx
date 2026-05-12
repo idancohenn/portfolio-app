@@ -186,14 +186,42 @@ const App = () => {
       }
     };
 
+    // הפונקציה החדשה והיציבה - מנסה 3 שרתי תיווך שונים כדי לעקוף חסימות
+    const fetchThroughProxy = async (targetUrl) => {
+      const proxies = [
+          { type: 'allorigins', url: `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&_ts=${Date.now()}` },
+          { type: 'corsproxy', url: `https://corsproxy.io/?${encodeURIComponent(targetUrl)}` },
+          { type: 'codetabs', url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}` }
+      ];
+
+      for (const proxy of proxies) {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4000);
+          try {
+              const res = await fetch(proxy.url, { signal: controller.signal });
+              clearTimeout(timeoutId);
+              if (res.ok) {
+                  if (proxy.type === 'allorigins') {
+                      const data = await res.json();
+                      if (data.contents) return data.contents;
+                  } else {
+                      return await res.text();
+                  }
+              }
+          } catch(e) {
+              clearTimeout(timeoutId);
+          }
+      }
+      return null;
+    };
+
     const uniqueHoldings = Array.from(new Map(holdings.map(h => [h.symbol.trim().toUpperCase(), h])).values());
 
     // --- 1. הפתרון המקיף: FMP API (Financial Modeling Prep) ---
-    // אם הוגדר מפתח, נבקש את כל המניות (ישראל וארה"ב) בבקשה אחת מרוכזת ומהירה!
     if (settings.fmpKey) {
       const fmpSymbols = uniqueHoldings.map(h => {
         let t = h.symbol.trim().toUpperCase();
-        if (h.currency === 'ILS' && !t.includes('.')) return `${t}.TA`; // מוסיף .TA עבור הבורסה בת"א
+        if (h.currency === 'ILS' && !t.includes('.')) return `${t}.TA`; 
         return t;
       }).join(',');
 
@@ -201,29 +229,32 @@ const App = () => {
         const res = await fetchWithTimeout(`https://financialmodelingprep.com/api/v3/quote/${fmpSymbols}?apikey=${settings.fmpKey}`, 5000);
         if (res.ok) {
           const data = await res.json();
-          data.forEach(item => {
-            // מנקה את ה-.TA כדי לחבר חזרה למניה שהוזנה באפליקציה
-            let originalSymbol = item.symbol.replace('.TA', '');
-            const holding = uniqueHoldings.find(h => 
-              h.symbol.trim().toUpperCase() === originalSymbol || 
-              h.symbol.trim().toUpperCase() === item.symbol
-            );
-            
-            if (holding) {
-              let currentPrice = item.price;
-              let prevClose = item.previousClose;
+          // התיקון הגדול: מוודא שחזר מערך של מניות ולא אובייקט שגיאה שמפיל את האפליקציה!
+          if (Array.isArray(data)) {
+            data.forEach(item => {
+              let originalSymbol = item.symbol.replace('.TA', '');
+              const holding = uniqueHoldings.find(h => 
+                h.symbol.trim().toUpperCase() === originalSymbol || 
+                h.symbol.trim().toUpperCase() === item.symbol
+              );
               
-              // FMP מחזיר מניות וקרנות ישראליות באגורות, אז נמיר לשקלים
-              if (holding.currency === 'ILS') {
-                  currentPrice /= 100;
-                  if (prevClose) prevClose /= 100;
+              if (holding) {
+                let currentPrice = item.price;
+                let prevClose = item.previousClose;
+                
+                if (holding.currency === 'ILS') {
+                    currentPrice /= 100;
+                    if (prevClose) prevClose /= 100;
+                }
+                
+                const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
+                newMarketData[holding.symbol.trim().toUpperCase()] = { currentPrice, dailyChangePct };
+                cacheUpdated = true;
               }
-              
-              const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
-              newMarketData[holding.symbol.trim().toUpperCase()] = { currentPrice, dailyChangePct };
-              cacheUpdated = true;
-            }
-          });
+            });
+          } else {
+            console.warn("FMP returned an error (usually invalid API key):", data);
+          }
         }
       } catch(e) {
         console.warn("FMP API fetch failed", e);
@@ -234,19 +265,18 @@ const App = () => {
     const fetchPromises = uniqueHoldings.map(async (h) => {
       let ticker = h.symbol.trim().toUpperCase();
       
-      // אם המניה כבר עודכנה דרך FMP, נדלג עליה
       if (newMarketData[ticker]) return null;
 
       let currentPrice = null;
       let prevClose = null;
 
-      // 2.1: מניות אמריקאיות דרך Finnhub
+      // 2.1: מניות אמריקאיות דרך Finnhub (מוגן מפני קריסות של מפתח שגוי)
       if (h.currency === 'USD' && settings.finnhubKey) {
         try {
           const res = await fetchWithTimeout(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`, 4000);
           if (res.ok) {
              const data = await res.json();
-             if (data.c && data.c > 0) {
+             if (data && !data.error && data.c && data.c > 0) {
                 currentPrice = data.c;
                 prevClose = data.pc;
              }
@@ -273,41 +303,83 @@ const App = () => {
         try {
           if (h.currency === 'ILS') {
              const cleanTicker = ticker.replace('.TA', '');
+             const isNumeric = /^\d+$/.test(cleanTicker);
              
-             // ניסיון מול Yahoo (לפעמים עובד למניות ישראליות גדולות)
-             try {
-                 const url = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanTicker}.TA?interval=1d`;
-                 const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&disableCache=${Date.now()}`;
-                 const res = await fetchWithTimeout(proxyUrl, 4000);
-                 if (res.ok) {
-                     const proxyData = await res.json();
-                     if (proxyData.contents) {
-                         const data = JSON.parse(proxyData.contents);
+             // ניסיון מול Bizportal API לקרנות/תעודות סל ישראליות (בטוח לגמרי)
+             if (currentPrice === null && isNumeric) {
+                 try {
+                     const content = await fetchThroughProxy(`https://gw.bizportal.co.il/api/quote/paper/${cleanTicker}`);
+                     if (content) {
+                         const data = typeof content === 'string' ? JSON.parse(content) : content;
+                         if (data && data.lastRate > 0) {
+                             currentPrice = parseFloat(data.lastRate) / 100;
+                             prevClose = parseFloat(data.baseRate) / 100;
+                         }
+                     }
+                 } catch(e) {}
+             }
+
+             // ניסיון מול Google Finance לישראל
+             if (currentPrice === null) {
+                 try {
+                     const content = await fetchThroughProxy(`https://www.google.com/finance/quote/${cleanTicker}:TLV`);
+                     if (content) {
+                         let match = content.match(/data-last-price="([0-9.]+)"/);
+                         if (!match) match = content.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
+                         if (match && match[1]) {
+                             currentPrice = parseFloat(match[1].replace(/,/g, ''));
+                             if (currentPrice > 1000 && isNumeric) currentPrice /= 100;
+                         }
+                     }
+                 } catch(e) {}
+             }
+
+             // ניסיון מול Yahoo (גיבוי לישראל)
+             if (currentPrice === null) {
+                 try {
+                     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanTicker}.TA?interval=1d`;
+                     const content = await fetchThroughProxy(url);
+                     if (content) {
+                         const data = typeof content === 'string' ? JSON.parse(content) : content;
                          if (data?.chart?.result?.[0]) {
                              currentPrice = data.chart.result[0].meta.regularMarketPrice / 100;
                              prevClose = data.chart.result[0].meta.chartPreviousClose / 100;
                          }
                      }
-                 }
-             } catch(e) {}
+                 } catch(e) {}
+             }
 
           } else {
              // גיבוי לארה"ב דרך Yahoo
              try {
                  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d`;
-                 const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&disableCache=${Date.now()}`;
-                 const res = await fetchWithTimeout(proxyUrl, 4000);
-                 if (res.ok) {
-                     const proxyData = await res.json();
-                     if (proxyData.contents) {
-                         const data = JSON.parse(proxyData.contents);
-                         if (data?.chart?.result?.[0]) {
-                             currentPrice = data.chart.result[0].meta.regularMarketPrice;
-                             prevClose = data.chart.result[0].meta.chartPreviousClose;
-                         }
+                 const content = await fetchThroughProxy(url);
+                 if (content) {
+                     const data = typeof content === 'string' ? JSON.parse(content) : content;
+                     if (data?.chart?.result?.[0]) {
+                         currentPrice = data.chart.result[0].meta.regularMarketPrice;
+                         prevClose = data.chart.result[0].meta.chartPreviousClose;
                      }
                  }
              } catch(e) {}
+
+             // גיבוי לארה"ב דרך Google
+             if (currentPrice === null) {
+                 const exchanges = ['NASDAQ', 'NYSE', 'AMEX', ''];
+                 for (let ex of exchanges) {
+                     if (currentPrice !== null) break;
+                     try {
+                         const content = await fetchThroughProxy(`https://www.google.com/finance/quote/${ticker}${ex ? ':'+ex : ''}`);
+                         if (content) {
+                             let match = content.match(/data-last-price="([0-9.]+)"/);
+                             if (!match) match = content.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
+                             if (match && match[1]) {
+                                 currentPrice = parseFloat(match[1].replace(/,/g, ''));
+                             }
+                         }
+                     } catch(e) {}
+                 }
+             }
           }
         } catch(e) {}
       }
