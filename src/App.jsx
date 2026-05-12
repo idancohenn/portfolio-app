@@ -30,16 +30,13 @@ const App = () => {
   const [holdings, setHoldings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
-  const [activeTab, setActiveTab] = useState('home'); // 'home', 'stats', 'ai'
+  const [activeTab, setActiveTab] = useState('home');
 
-  // Settings State (API Keys)
   const [settings, setSettings] = useState({ finnhubKey: '' });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // Real-time Exchage Rate
   const [usdRate, setUsdRate] = useState(3.75);
 
-  // AI Prompt State
   const [generatedPrompt, setGeneratedPrompt] = useState("");
   const [isCopied, setIsCopied] = useState(false);
   const [error, setError] = useState(null);
@@ -48,18 +45,13 @@ const App = () => {
     symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD', sector: 'טכנולוגיה', platform: 'IBI SMART', note: ''
   });
 
-  // State for Editing
   const [editingId, setEditingId] = useState(null);
-  
-  // State for Expanding Holding Card Actions
   const [expandedHoldingId, setExpandedHoldingId] = useState(null);
 
-  // Real Market Data
   const [marketData, setMarketData] = useState({});
   const [isRefreshingPrices, setIsRefreshingPrices] = useState(false);
 
-  // Sorting State
-  const [sortBy, setSortBy] = useState('value-desc'); // 'value-desc', 'value-asc', 'profit-desc', 'sector', 'platform'
+  const [sortBy, setSortBy] = useState('value-desc');
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
 
   const sectors = ['שבבים', 'תוכנה', 'סייבר', 'פינטק', 'מדדים', 'אנרגיה', 'דאטה סנטרים', 'ביומד', 'פיננסים', 'אחר'];
@@ -73,7 +65,6 @@ const App = () => {
           await signInWithCustomToken(auth, __initial_auth_token);
         }
 
-        // Fetch Live USD/ILS Rate
         try {
           const res = await fetch('https://open.er-api.com/v6/latest/USD');
           const data = await res.json();
@@ -99,7 +90,6 @@ const App = () => {
   useEffect(() => {
     if (!user) return;
     
-    // Load Settings
     const fetchSettings = async () => {
       try {
         const docSnap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'config'));
@@ -109,7 +99,6 @@ const App = () => {
       } catch(e) {}
     };
     
-    // Load Cache
     const loadCache = async () => {
       try {
         const cacheSnap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'));
@@ -132,7 +121,7 @@ const App = () => {
     try {
       await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'config'), settings);
       setIsSettingsOpen(false);
-      fetchMarketPrices(); // Trigger refresh to use new key immediately
+      fetchMarketPrices(); 
     } catch(e) {
       setError("שגיאה בשמירת הגדרות API");
     }
@@ -165,25 +154,39 @@ const App = () => {
     return () => unsubscribe();
   }, [user]);
 
-  // 2.5 Real Market Data Fetching
+  // 2.5 Real Market Data Fetching (With robust Proxy Fetcher)
   const fetchMarketPrices = async () => {
     if (holdings.length === 0) return;
     setIsRefreshingPrices(true);
     const newMarketData = { ...marketData };
     let cacheUpdated = false;
 
-    // Helper: Fetch with Timeout to prevent hanging
-    const fetchWithTimeout = async (url, timeoutMs = 4000) => {
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), timeoutMs);
-        try {
-            const res = await fetch(url, { signal: controller.signal });
-            clearTimeout(id);
-            return res;
-        } catch(e) {
-            clearTimeout(id);
-            throw e;
-        }
+    // Helper: פונקציית פרוקסי חכמה המנסה מגוון שרתים במקרה של חסימות
+    const fetchThroughProxy = async (targetUrl) => {
+      const proxies = [
+          { type: 'allorigins', url: `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&_ts=${Date.now()}` },
+          { type: 'codetabs', url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}` }
+      ];
+
+      for (const proxy of proxies) {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4500);
+          try {
+              const res = await fetch(proxy.url, { signal: controller.signal });
+              clearTimeout(timeoutId);
+              if (res.ok) {
+                  if (proxy.type === 'allorigins') {
+                      const data = await res.json();
+                      if (data.contents) return data.contents;
+                  } else {
+                      return await res.text();
+                  }
+              }
+          } catch(e) {
+              clearTimeout(timeoutId);
+          }
+      }
+      return null;
     };
 
     const uniqueHoldings = Array.from(new Map(holdings.map(h => [h.symbol.trim().toUpperCase(), h])).values());
@@ -193,10 +196,14 @@ const App = () => {
       let currentPrice = null;
       let prevClose = null;
 
-      // 1. מניות אמריקאיות דרך Finnhub - עדיפות ראשונה!
+      // 1. מניות אמריקאיות דרך Finnhub (גישה ישירה)
       if (h.currency === 'USD' && settings.finnhubKey) {
         try {
-          const res = await fetchWithTimeout(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`, 4000);
+          const controller = new AbortController();
+          const id = setTimeout(() => controller.abort(), 4000);
+          const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`, { signal: controller.signal });
+          clearTimeout(id);
+          
           if (res.ok) {
              const data = await res.json();
              if (data.c && data.c > 0) {
@@ -207,10 +214,14 @@ const App = () => {
         } catch(e) {}
       }
 
-      // 2. קריפטו דרך Binance
+      // 2. קריפטו דרך Binance (גישה ישירה)
       if (h.currency === 'USD' && currentPrice === null) {
         try {
-          const res = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/24hr?symbol=${ticker}USDT`, 3000);
+          const controller = new AbortController();
+          const id = setTimeout(() => controller.abort(), 3000);
+          const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${ticker}USDT`, { signal: controller.signal });
+          clearTimeout(id);
+          
           if (res.ok) {
              const data = await res.json();
              if (data && data.lastPrice) {
@@ -221,57 +232,48 @@ const App = () => {
         } catch(e) {}
       }
 
-      // 3. גיבוי ומניות ישראל
+      // 3. גיבוי ומניות ישראל (דרך מנוע הפרוקסי החדש)
       if (currentPrice === null) {
         if (h.currency === 'ILS') {
             const cleanTicker = ticker.replace('.TA', '');
             const isNumeric = /^\d+$/.test(cleanTicker);
 
-            // אופציה 3.1: Bizportal API (הפתרון המדויק לקרנות ישראליות עם מספרים)
+            // 3.1: Bizportal API (מצוין לתעודות סל כמו 1146497)
             if (currentPrice === null && isNumeric) {
                 try {
-                    const url = `https://gw.bizportal.co.il/api/quote/paper/${cleanTicker}`;
-                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}&disableCache=true`;
-                    const res = await fetchWithTimeout(proxyUrl, 4000);
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data && data.lastRate !== undefined && data.lastRate > 0) {
-                            currentPrice = parseFloat(data.lastRate) / 100;
+                    const content = await fetchThroughProxy(`https://gw.bizportal.co.il/api/quote/paper/${cleanTicker}`);
+                    if (content) {
+                        const data = JSON.parse(content);
+                        if (data && data.lastRate > 0) {
+                            currentPrice = parseFloat(data.lastRate) / 100; // ממיר אגורות לשקלים
                             prevClose = parseFloat(data.baseRate) / 100;
                         }
                     }
                 } catch(e) {}
             }
 
-            // אופציה 3.2: Google Finance (מעולה למניות ישראליות בבורסת תל אביב)
+            // 3.2: Google Finance TLV
             if (currentPrice === null) {
                 try {
-                    const url = `https://www.google.com/finance/quote/${encodeURIComponent(cleanTicker)}:TLV`;
-                    // Google redirects sometimes, allorigins /get wrapper handles this securely
-                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&disableCache=true`;
-                    const res = await fetchWithTimeout(proxyUrl, 4000);
-                    if (res.ok) {
-                        const proxyData = await res.json();
-                        if (proxyData && proxyData.contents) {
-                            let match = proxyData.contents.match(/data-last-price="([0-9.]+)"/);
-                            if (!match) match = proxyData.contents.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
-                            if (match && match[1]) {
-                                currentPrice = parseFloat(match[1].replace(/,/g, ''));
-                            }
+                    const content = await fetchThroughProxy(`https://www.google.com/finance/quote/${cleanTicker}:TLV`);
+                    if (content) {
+                        let match = content.match(/data-last-price="([0-9.]+)"/);
+                        if (!match) match = content.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
+                        if (match && match[1]) {
+                            currentPrice = parseFloat(match[1].replace(/,/g, ''));
+                            // גוגל מציג מניות ישראליות לרוב באגורות
+                            if (currentPrice > 1000 && isNumeric) currentPrice /= 100; 
                         }
                     }
                 } catch(e) {}
             }
 
-            // אופציה 3.3: Yahoo Finance גיבוי אחרון
+            // 3.3: Yahoo Finance .TA גיבוי סופי לישראל
             if (currentPrice === null) {
                 try {
-                    let yahooTicker = ticker.includes('.') ? ticker : `${ticker}.TA`;
-                    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?interval=1d`;
-                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}&disableCache=true`;
-                    const res = await fetchWithTimeout(proxyUrl, 4000);
-                    if (res.ok) {
-                        const data = await res.json();
+                    const content = await fetchThroughProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${cleanTicker}.TA?interval=1d`);
+                    if (content) {
+                        const data = JSON.parse(content);
                         if (data?.chart?.result?.[0]) {
                             currentPrice = data.chart.result[0].meta.regularMarketPrice / 100;
                             prevClose = data.chart.result[0].meta.chartPreviousClose / 100;
@@ -281,16 +283,12 @@ const App = () => {
             }
 
         } else {
-            // USD Fallbacks (אם המפתח של Finnhub חסר או שהמניה לא מצאה)
-
-            // אופציה 4.1: Yahoo Finance לארה"ב
+            // גיבוי למניות אמריקאיות אם Finnhub נכשל או חסר מפתח
             if (currentPrice === null) {
                 try {
-                    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d`;
-                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}&disableCache=true`;
-                    const res = await fetchWithTimeout(proxyUrl, 4000);
-                    if (res.ok) {
-                        const data = await res.json();
+                    const content = await fetchThroughProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d`);
+                    if (content) {
+                        const data = JSON.parse(content);
                         if (data?.chart?.result?.[0]) {
                             currentPrice = data.chart.result[0].meta.regularMarketPrice;
                             prevClose = data.chart.result[0].meta.chartPreviousClose;
@@ -299,23 +297,17 @@ const App = () => {
                 } catch(e) {}
             }
 
-            // אופציה 4.2: Google Finance לארה"ב
             if (currentPrice === null) {
                 const exchanges = ['NASDAQ', 'NYSE', 'AMEX', ''];
                 for (let ex of exchanges) {
                     if (currentPrice !== null) break;
                     try {
-                        const url = `https://www.google.com/finance/quote/${encodeURIComponent(ticker)}${ex ? ':'+ex : ''}`;
-                        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&disableCache=true`;
-                        const res = await fetchWithTimeout(proxyUrl, 3000);
-                        if (res.ok) {
-                            const proxyData = await res.json();
-                            if (proxyData && proxyData.contents) {
-                                let match = proxyData.contents.match(/data-last-price="([0-9.]+)"/);
-                                if (!match) match = proxyData.contents.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
-                                if (match && match[1]) {
-                                    currentPrice = parseFloat(match[1].replace(/,/g, ''));
-                                }
+                        const content = await fetchThroughProxy(`https://www.google.com/finance/quote/${ticker}${ex ? ':'+ex : ''}`);
+                        if (content) {
+                            let match = content.match(/data-last-price="([0-9.]+)"/);
+                            if (!match) match = content.match(/class="YMlKec fxKbKc"[^>]*>[^\d]*([0-9,.]+)/);
+                            if (match && match[1]) {
+                                currentPrice = parseFloat(match[1].replace(/,/g, ''));
                             }
                         }
                     } catch(e) {}
@@ -324,10 +316,12 @@ const App = () => {
         }
       }
 
-      if (currentPrice !== null && !isNaN(currentPrice)) {
-         const dailyChangePct = prevClose ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
+      if (currentPrice !== null && !isNaN(currentPrice) && currentPrice > 0) {
+         const dailyChangePct = prevClose && prevClose > 0 ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
          return { symbol: ticker, currentPrice, dailyChangePct };
       }
+      
+      console.warn(`Could not update price for ${ticker}`);
       return null;
     });
 
