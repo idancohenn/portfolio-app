@@ -179,8 +179,24 @@ const App = () => {
       let currentPrice = null;
       let prevClose = null;
 
-      // 1. קריפטו דרך Binance (תמיד יציב, לא דורש מפתח, אין חסימות CORS)
-      if (h.currency === 'USD') {
+      // 1. מניות אמריקאיות דרך Finnhub - עדיפות ראשונה! 
+      // הפתרון המקצועי שמונע התנגשויות (כמו DIA שהוא גם מטבע וגם מניה)
+      if (h.currency === 'USD' && settings.finnhubKey) {
+        try {
+          const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`);
+          if (res.ok) {
+             const data = await res.json();
+             // Finnhub returns 0 if symbol is not found (or if it's a crypto token requested as a normal stock)
+             if (data.c && data.c > 0) {
+                currentPrice = data.c;
+                prevClose = data.pc;
+             }
+          }
+        } catch(e) {}
+      }
+
+      // 2. קריפטו דרך Binance (רק אם לא נמצאה מניה ב-Finnhub, או שאין עדיין מפתח)
+      if (h.currency === 'USD' && currentPrice === null) {
         try {
           const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${ticker}USDT`);
           if (res.ok) {
@@ -193,22 +209,7 @@ const App = () => {
         } catch(e) {}
       }
 
-      // 2. מניות אמריקאיות דרך Finnhub (הפתרון המקצועי, עובד ישיר ללא חסימות אם יש מפתח)
-      if (h.currency === 'USD' && currentPrice === null && settings.finnhubKey) {
-        try {
-          const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`);
-          if (res.ok) {
-             const data = await res.json();
-             // Finnhub returns 0 if symbol is not found
-             if (data.c && data.c > 0) {
-                currentPrice = data.c;
-                prevClose = data.pc;
-             }
-          }
-        } catch(e) {}
-      }
-
-      // 3. גיבוי + מניות ישראל דרך פרוקסי חזק (CodeTabs לא נחסם בקלות כמו AllOrigins)
+      // 3. גיבוי + מניות ישראל דרך פרוקסי חזק
       if (currentPrice === null) {
         try {
           if (h.currency === 'ILS') {
@@ -224,7 +225,7 @@ const App = () => {
                  }
              }
           } else {
-             // Google Finance גיבוי לארה"ב (למי שעדיין לא שם מפתח API)
+             // Google Finance גיבוי לארה"ב (למי שעדיין לא שם מפתח API או שהמניה לא ב-Finnhub)
              const exchanges = ['NASDAQ', 'NYSE', 'AMEX', ''];
              for (let ex of exchanges) {
                  if (currentPrice !== null) break;
