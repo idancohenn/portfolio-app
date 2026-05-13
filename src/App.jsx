@@ -169,22 +169,34 @@ const App = () => {
     const newMarketData = { ...marketData };
     let cacheUpdated = false;
 
-    // הפונקציה הזו מביאה את הנתונים משירותי תיווך ומפענחת את ה-JSON בצורה בטוחה
-    const fetchProxy = async (targetUrl) => {
+    // הפונקציה הזו מביאה את הנתונים משירותי תיווך ומפענחת את ה-JSON או הטקסט בצורה בטוחה!
+    const fetchProxy = async (targetUrl, isJson = true) => {
+      // פרוקסי 1: AllOrigins
       try {
         const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&disableCache=${Date.now()}`);
         if (res.ok) {
           const proxyData = await res.json();
           if (proxyData.contents) {
-            return JSON.parse(proxyData.contents);
+            return isJson ? JSON.parse(proxyData.contents) : proxyData.contents;
           }
         }
       } catch (e) {}
 
+      // פרוקסי 2: CorsProxy (אמין מאוד ועוקף חסימות מצוין)
+      try {
+        const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`);
+        if (res.ok) {
+          const text = await res.text();
+          return isJson ? JSON.parse(text) : text;
+        }
+      } catch (e) {}
+
+      // פרוקסי 3: CodeTabs (גיבוי)
       try {
         const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`);
         if (res.ok) {
-          return await res.json();
+          const text = await res.text();
+          return isJson ? JSON.parse(text) : text;
         }
       } catch (e) {}
 
@@ -198,7 +210,7 @@ const App = () => {
       let currentPrice = null;
       let prevClose = null;
 
-      // --- 1. מניות ארה"ב (USD) ---
+      // --- 1. מניות ארה"ב (USD) - נשאר בדיוק כמו שביקשת! ---
       if (h.currency === 'USD') {
          // מקור ראשי לארה"ב: Finnhub
          if (settings.finnhubKey) {
@@ -230,7 +242,7 @@ const App = () => {
 
          // גיבוי שאיבה דרך Yahoo לארה"ב
          if (currentPrice === null) {
-             const data = await fetchProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d`);
+             const data = await fetchProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d`, true);
              if (data?.chart?.result?.[0]) {
                  currentPrice = data.chart.result[0].meta.regularMarketPrice;
                  prevClose = data.chart.result[0].meta.chartPreviousClose;
@@ -243,23 +255,41 @@ const App = () => {
          const cleanTicker = ticker.replace('.TA', '');
          const isNumeric = /^\d+$/.test(cleanTicker); // מזהה תעודות סל ומדדים
 
-         // מקור ראשי לישראל (מספרים): Bizportal
-         if (isNumeric) {
-             const data = await fetchProxy(`https://gw.bizportal.co.il/api/quote/paper/${cleanTicker}`);
-             if (data && data.lastRate > 0) {
-                 currentPrice = parseFloat(data.lastRate) / 100; // ממיר אגורות לשקלים
-                 prevClose = parseFloat(data.baseRate) / 100;
-             }
-         }
-
-         // מקור ראשי למניות רגילות / גיבוי למספרים: Yahoo Finance
-         if (currentPrice === null) {
+         // אופציה 1: Yahoo Finance Israel (יציב, מהיר ומכיל הכל)
+         try {
              let yahooTicker = ticker.includes('.') ? ticker : `${ticker}.TA`;
-             const data = await fetchProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1d`);
+             const data = await fetchProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1d`, true);
              if (data?.chart?.result?.[0]) {
                  currentPrice = data.chart.result[0].meta.regularMarketPrice / 100;
                  prevClose = data.chart.result[0].meta.chartPreviousClose / 100;
              }
+         } catch(e) {}
+
+         // אופציה 2: Google Finance (עם תמיכה בטקסט HTML!)
+         if (currentPrice === null) {
+             try {
+                 const html = await fetchProxy(`https://www.google.com/finance/quote/${cleanTicker}:TLV`, false);
+                 if (html) {
+                     let match = html.match(/data-last-price="([0-9.]+)"/);
+                     if (!match) match = html.match(/class="YMlKec fxKbKc"[^>]*>([0-9,.]+)/);
+                     if (match && match[1]) {
+                         currentPrice = parseFloat(match[1].replace(/,/g, ''));
+                         // גוגל מציג מניות ותעודות מסוימות באגורות (אם זה גדול מ-100 וזה תעודה מספרית)
+                         if (currentPrice > 100 && isNumeric) currentPrice /= 100;
+                     }
+                 }
+             } catch(e) {}
+         }
+
+         // אופציה 3: Bizportal API
+         if (currentPrice === null && isNumeric) {
+             try {
+                 const data = await fetchProxy(`https://gw.bizportal.co.il/api/quote/paper/${cleanTicker}`, true);
+                 if (data && data.lastRate > 0) {
+                     currentPrice = parseFloat(data.lastRate) / 100; // ממיר אגורות לשקלים
+                     prevClose = parseFloat(data.baseRate) / 100;
+                 }
+             } catch(e) {}
          }
       }
 
