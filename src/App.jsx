@@ -651,32 +651,32 @@ const App = () => {
                           <span className="text-[9px] text-slate-300 font-medium truncate leading-tight">{h.sector}</span>
                         </div>
 
-                        {/* Center: current price + worth */}
+                        {/* Center: portfolio value (bold) + current price (gray) */}
                         <div className="flex flex-col items-center flex-1 min-w-0">
-                          <span className="font-bold text-slate-800 text-xs" dir="ltr">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                          <span className="text-[9px] text-slate-400 font-medium">₪{totalValueILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                          <span className="font-black text-slate-900 text-sm leading-tight" dir="ltr">₪{totalValueILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                          <span className="text-[9px] text-slate-400 font-medium mt-0.5" dir="ltr">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })} נוכחי</span>
                         </div>
 
                         {/* Right: two badges side by side — יומי on right, סה"כ on left */}
                         <div className="flex items-stretch gap-1 shrink-0">
                           {/* סה"כ — left badge */}
-                          <div className={`flex flex-col items-center px-2 py-1.5 rounded-lg min-w-[52px] ${isProfit ? 'bg-green-50' : 'bg-red-50'}`}>
-                            <span className={`text-[8px] font-bold leading-none mb-1 ${isProfit ? 'text-green-400' : 'text-red-400'}`}>סה״כ</span>
-                            <span className={`text-[11px] font-black leading-none ${isProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
-                              {isProfit ? '+' : ''}{totalChangePct.toFixed(1)}%
+                          <div className={`flex flex-col items-center py-1.5 rounded-lg w-[56px] ${totalChangePct === 0 ? 'bg-slate-50' : isProfit ? 'bg-green-50' : 'bg-red-50'}`}>
+                            <span className={`text-[8px] font-bold leading-none mb-1 ${totalChangePct === 0 ? 'text-slate-400' : isProfit ? 'text-green-400' : 'text-red-400'}`}>סה״כ</span>
+                            <span className={`text-[11px] font-black leading-none ${totalChangePct === 0 ? 'text-slate-500' : isProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
+                              {isProfit && totalChangePct !== 0 ? '+' : ''}{totalChangePct.toFixed(1)}%
                             </span>
-                            <span className={`text-[8px] font-semibold leading-none mt-0.5 ${isProfit ? 'text-green-500' : 'text-red-500'}`} dir="ltr">
-                              {isProfit ? '+' : ''}₪{Math.abs(totalChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            <span className={`text-[8px] font-semibold leading-none mt-0.5 ${totalChangePct === 0 ? 'text-slate-400' : isProfit ? 'text-green-500' : 'text-red-500'}`} dir="ltr">
+                              {totalChangeAmtILS > 0 ? '+' : totalChangeAmtILS < 0 ? '' : ''}₪{Math.abs(totalChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                             </span>
                           </div>
                           {/* יומי — right badge */}
-                          <div className={`flex flex-col items-center px-2 py-1.5 rounded-lg min-w-[52px] ${isDailyProfit ? 'bg-green-50' : 'bg-red-50'}`}>
-                            <span className={`text-[8px] font-bold leading-none mb-1 ${isDailyProfit ? 'text-green-400' : 'text-red-400'}`}>יומי</span>
-                            <span className={`text-[11px] font-black leading-none ${isDailyProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
-                              {isDailyProfit ? '+' : ''}{dailyChangePct.toFixed(2)}%
+                          <div className={`flex flex-col items-center py-1.5 rounded-lg w-[56px] ${dailyChangePct === 0 ? 'bg-slate-50' : isDailyProfit ? 'bg-green-50' : 'bg-red-50'}`}>
+                            <span className={`text-[8px] font-bold leading-none mb-1 ${dailyChangePct === 0 ? 'text-slate-400' : isDailyProfit ? 'text-green-400' : 'text-red-400'}`}>יומי</span>
+                            <span className={`text-[11px] font-black leading-none ${dailyChangePct === 0 ? 'text-slate-500' : isDailyProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
+                              {isDailyProfit && dailyChangePct !== 0 ? '+' : ''}{dailyChangePct.toFixed(2)}%
                             </span>
-                            <span className={`text-[8px] font-semibold leading-none mt-0.5 ${isDailyProfit ? 'text-green-500' : 'text-red-500'}`} dir="ltr">
-                              {isDailyProfit ? '+' : ''}₪{Math.abs(dailyChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            <span className={`text-[8px] font-semibold leading-none mt-0.5 ${dailyChangePct === 0 ? 'text-slate-400' : isDailyProfit ? 'text-green-500' : 'text-red-500'}`} dir="ltr">
+                              {dailyChangeAmtILS > 0 ? '+' : ''}₪{Math.abs(dailyChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                             </span>
                           </div>
                         </div>
@@ -804,23 +804,23 @@ const App = () => {
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-[28px] p-6 text-white shadow-xl border border-slate-700/50">
               <div className="flex items-center gap-3 mb-3">
                 <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-md">
-                  <Newspaper size={26} className="text-amber-300" />
+                  <Newspaper size={26} className="text-blue-300" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-black">סריקת חדשות</h2>
+                  <h2 className="text-lg font-black">סריקת עדכונים</h2>
                   <p className="text-slate-300 text-xs">עדכונים על המניות שלך</p>
                 </div>
               </div>
               <p className="text-sm text-slate-300 leading-relaxed mb-5">
-                קבל סריקת חדשות עדכנית על כל המניות בתיקך — אירועים, התפתחויות, אזהרות, ומה לעקוב אחריו.
+                קבל סריקת עדכונים על כל המניות בתיקך — אירועים, התפתחויות, אזהרות, ומה לעקוב אחריו.
               </p>
               <button
                 onClick={generateNewsPrompt}
                 disabled={holdings.length === 0}
-                className="w-full bg-amber-400 text-slate-900 font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-70 shadow-lg"
+                className="w-full bg-blue-500 text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-70 shadow-lg"
               >
                 <Newspaper size={18} />
-                צור פקודה לסריקת חדשות
+                צור פקודה לסריקת עדכונים
               </button>
             </div>
 
