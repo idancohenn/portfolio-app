@@ -657,20 +657,26 @@ const App = () => {
                           <span className="text-[9px] text-slate-400 font-medium">₪{totalValueILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                         </div>
 
-                        {/* Right: two badges side by side */}
-                        <div className="flex items-center gap-1 shrink-0">
-                          {/* Total */}
-                          <div className={`flex flex-col items-center px-2 py-1 rounded-lg ${isProfit ? 'bg-green-50' : 'bg-red-50'}`}>
-                            <span className={`text-[8px] font-bold leading-none mb-0.5 ${isProfit ? 'text-green-400' : 'text-red-400'}`}>סה״כ</span>
+                        {/* Right: two badges side by side — יומי on right, סה"כ on left */}
+                        <div className="flex items-stretch gap-1 shrink-0">
+                          {/* סה"כ — left badge */}
+                          <div className={`flex flex-col items-center px-2 py-1.5 rounded-lg min-w-[52px] ${isProfit ? 'bg-green-50' : 'bg-red-50'}`}>
+                            <span className={`text-[8px] font-bold leading-none mb-1 ${isProfit ? 'text-green-400' : 'text-red-400'}`}>סה״כ</span>
                             <span className={`text-[11px] font-black leading-none ${isProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
                               {isProfit ? '+' : ''}{totalChangePct.toFixed(1)}%
                             </span>
+                            <span className={`text-[8px] font-semibold leading-none mt-0.5 ${isProfit ? 'text-green-500' : 'text-red-500'}`} dir="ltr">
+                              {isProfit ? '+' : ''}₪{Math.abs(totalChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            </span>
                           </div>
-                          {/* Daily */}
-                          <div className={`flex flex-col items-center px-2 py-1 rounded-lg ${isDailyProfit ? 'bg-sky-50' : 'bg-orange-50'}`}>
-                            <span className={`text-[8px] font-bold leading-none mb-0.5 ${isDailyProfit ? 'text-sky-400' : 'text-orange-400'}`}>יומי</span>
-                            <span className={`text-[11px] font-black leading-none ${isDailyProfit ? 'text-sky-600' : 'text-orange-600'}`} dir="ltr">
+                          {/* יומי — right badge */}
+                          <div className={`flex flex-col items-center px-2 py-1.5 rounded-lg min-w-[52px] ${isDailyProfit ? 'bg-green-50' : 'bg-red-50'}`}>
+                            <span className={`text-[8px] font-bold leading-none mb-1 ${isDailyProfit ? 'text-green-400' : 'text-red-400'}`}>יומי</span>
+                            <span className={`text-[11px] font-black leading-none ${isDailyProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
                               {isDailyProfit ? '+' : ''}{dailyChangePct.toFixed(2)}%
+                            </span>
+                            <span className={`text-[8px] font-semibold leading-none mt-0.5 ${isDailyProfit ? 'text-green-500' : 'text-red-500'}`} dir="ltr">
+                              {isDailyProfit ? '+' : ''}₪{Math.abs(dailyChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                             </span>
                           </div>
                         </div>
