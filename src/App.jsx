@@ -643,9 +643,9 @@ const App = () => {
                       onClick={() => setExpandedHoldingId(isExpanded ? null : h.id)}
                     >
                       {/* Main row — always visible */}
-                      <div className="px-3 py-3 flex items-center gap-2">
+                      <div className="px-3 py-2.5 flex items-center gap-2">
                         {/* Left: symbol + note */}
-                        <div className="flex flex-col min-w-0 w-[22%]">
+                        <div className="flex flex-col min-w-0 w-[23%]">
                           <span className="font-extrabold text-slate-900 text-sm leading-tight truncate">{h.symbol}</span>
                           {h.note && <span className="text-[9px] text-slate-400 font-medium truncate leading-tight mt-0.5">{h.note}</span>}
                           <span className="text-[9px] text-slate-300 font-medium truncate leading-tight">{h.sector}</span>
@@ -653,33 +653,24 @@ const App = () => {
 
                         {/* Center: current price + worth */}
                         <div className="flex flex-col items-center flex-1 min-w-0">
-                          <span className="text-[10px] text-slate-400 font-medium">מחיר נוכחי</span>
                           <span className="font-bold text-slate-800 text-xs" dir="ltr">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                          <span className="text-[9px] text-slate-500 font-medium mt-0.5">
-                            שווי: ₪{totalValueILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                          </span>
+                          <span className="text-[9px] text-slate-400 font-medium">₪{totalValueILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                         </div>
 
-                        {/* Right: profit badges */}
-                        <div className="flex flex-col items-end gap-1 min-w-[30%]">
-                          {/* Total profit */}
-                          <div className={`flex flex-col items-end px-2 py-1 rounded-lg w-full ${isProfit ? 'bg-green-50' : 'bg-red-50'}`}>
-                            <span className={`text-[8px] font-bold uppercase tracking-wide ${isProfit ? 'text-green-500' : 'text-red-500'}`}>סה"כ</span>
-                            <span className={`text-[10px] font-black leading-tight ${isProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
+                        {/* Right: two badges side by side */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {/* Total */}
+                          <div className={`flex flex-col items-center px-2 py-1 rounded-lg ${isProfit ? 'bg-green-50' : 'bg-red-50'}`}>
+                            <span className={`text-[8px] font-bold leading-none mb-0.5 ${isProfit ? 'text-green-400' : 'text-red-400'}`}>סה״כ</span>
+                            <span className={`text-[11px] font-black leading-none ${isProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
                               {isProfit ? '+' : ''}{totalChangePct.toFixed(1)}%
                             </span>
-                            <span className={`text-[9px] font-semibold leading-tight ${isProfit ? 'text-green-500' : 'text-red-500'}`} dir="ltr">
-                              {isProfit ? '+' : ''}₪{Math.abs(totalChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                            </span>
                           </div>
-                          {/* Daily change */}
-                          <div className={`flex flex-col items-end px-2 py-1 rounded-lg w-full ${isDailyProfit ? 'bg-emerald-50' : 'bg-orange-50'}`}>
-                            <span className={`text-[8px] font-bold uppercase tracking-wide ${isDailyProfit ? 'text-emerald-500' : 'text-orange-500'}`}>יומי</span>
-                            <span className={`text-[10px] font-black leading-tight ${isDailyProfit ? 'text-emerald-600' : 'text-orange-600'}`} dir="ltr">
+                          {/* Daily */}
+                          <div className={`flex flex-col items-center px-2 py-1 rounded-lg ${isDailyProfit ? 'bg-sky-50' : 'bg-orange-50'}`}>
+                            <span className={`text-[8px] font-bold leading-none mb-0.5 ${isDailyProfit ? 'text-sky-400' : 'text-orange-400'}`}>יומי</span>
+                            <span className={`text-[11px] font-black leading-none ${isDailyProfit ? 'text-sky-600' : 'text-orange-600'}`} dir="ltr">
                               {isDailyProfit ? '+' : ''}{dailyChangePct.toFixed(2)}%
-                            </span>
-                            <span className={`text-[9px] font-semibold leading-tight ${isDailyProfit ? 'text-emerald-500' : 'text-orange-500'}`} dir="ltr">
-                              {isDailyProfit ? '+' : ''}₪{Math.abs(dailyChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                             </span>
                           </div>
                         </div>
@@ -780,23 +771,23 @@ const App = () => {
         {activeTab === 'ai' && (
           <div className="space-y-4 animate-in fade-in duration-300">
             {/* Analysis prompt card */}
-            <div className="bg-gradient-to-br from-indigo-900 to-purple-900 rounded-[28px] p-6 text-white shadow-xl">
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-[28px] p-6 text-white shadow-xl border border-slate-700/50">
               <div className="flex items-center gap-3 mb-3">
                 <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-md">
-                  <BrainCircuit size={26} className="text-indigo-200" />
+                  <BrainCircuit size={26} className="text-blue-300" />
                 </div>
                 <div>
                   <h2 className="text-lg font-black">יועץ AI אישי</h2>
-                  <p className="text-indigo-200 text-xs">ניתוח תיק ההשקעות שלך</p>
+                  <p className="text-slate-300 text-xs">ניתוח תיק ההשקעות שלך</p>
                 </div>
               </div>
-              <p className="text-sm text-indigo-100 leading-relaxed mb-5">
+              <p className="text-sm text-slate-300 leading-relaxed mb-5">
                 המערכת תייצר פקודה מושלמת עם כל נתוני התיק. העתק והדבק ב-ChatGPT או ב-Gemini לקבלת ניתוח מעמיק.
               </p>
               <button
                 onClick={generateAiPrompt}
                 disabled={holdings.length === 0}
-                className="w-full bg-white text-indigo-900 font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-70 shadow-lg"
+                className="w-full bg-blue-500 text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-70 shadow-lg"
               >
                 <Sparkles size={18} />
                 צור פקודה לניתוח תיק
