@@ -525,7 +525,7 @@ const App = () => {
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans pb-24" dir="rtl">
 
-      <header className="bg-white px-5 py-4 flex items-center justify-between shadow-[0_2px_10px_-4px_rgba(0,0,0,0.1)] sticky top-0 z-20">
+      <header className="bg-white px-5 py-4 pt-safe flex items-center justify-between shadow-[0_2px_10px_-4px_rgba(0,0,0,0.1)] sticky top-0 z-20">
         <div className="flex items-center gap-3">
           <div>
             <h1 className="font-extrabold text-xl tracking-tight text-slate-800">MyWealth</h1>
@@ -860,8 +860,8 @@ const App = () => {
         )}
       </main>
 
-      <nav className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-xl border-t border-slate-200 pb-safe pt-2 px-6 z-30">
-        <div className="max-w-md mx-auto flex justify-between items-center pb-4">
+      <nav className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-xl border-t border-slate-200 pt-2 px-6 z-30" style={{paddingBottom: 'max(env(safe-area-inset-bottom), 12px)'}}>
+        <div className="max-w-md mx-auto flex justify-between items-center">
           <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 p-2 ${activeTab === 'home' ? 'text-blue-600' : 'text-slate-400'}`}>
             <Wallet size={24} className={activeTab === 'home' ? 'fill-blue-100' : ''} />
             <span className="text-[10px] font-bold">התיק שלי</span>

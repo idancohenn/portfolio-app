@@ -19,7 +19,7 @@ html, body {
 
 /* Safe area padding for iOS notch/home bar */
 .pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px); }
-.pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+.pt-safe { padding-top: calc(env(safe-area-inset-top, 0px) + 1rem); }
 
 /* Animation utilities */
 .animate-in { animation-fill-mode: both; }
