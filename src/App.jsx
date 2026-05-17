@@ -523,74 +523,76 @@ const App = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans pb-24" dir="rtl">
+    <div className="min-h-screen font-sans pb-24" style={{background:'#0d1117', color:'#e2e8f0'}} dir="rtl">
 
-      <header className="bg-white px-5 py-4 pt-safe flex items-center justify-between shadow-[0_2px_10px_-4px_rgba(0,0,0,0.1)] sticky top-0 z-20">
-        <div className="flex items-center gap-3">
-          <div>
-            <h1 className="font-extrabold text-xl tracking-tight text-slate-800">MyWealth</h1>
-            <p className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
-              <ArrowRightLeft size={10} /> שער דולר רציף: ₪{usdRate.toFixed(3)}
-            </p>
-          </div>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-slate-400 hover:text-slate-600 transition-colors bg-slate-50 rounded-full" title="הגדרות API">
-              <Settings size={16} />
-            </button>
-            <button onClick={fetchMarketPrices} disabled={isRefreshingPrices} className="p-2 text-slate-400 hover:text-blue-600 transition-colors bg-slate-50 rounded-full disabled:opacity-50" title="רענן מחירי שוק">
-              <RefreshCcw size={16} className={isRefreshingPrices ? "animate-spin text-blue-500" : ""} />
-            </button>
-          </div>
+      <header className="px-5 py-4 pt-safe flex items-center justify-between sticky top-0 z-20" style={{background:'#0d1117', borderBottom:'0.5px solid #1e293b'}}>
+        <div>
+          <h1 className="text-xl tracking-tight" style={{fontWeight:700, color:'#f1f5f9', letterSpacing:'-0.4px'}}>MyWealth</h1>
+          <p className="text-[9px] flex items-center gap-1 mt-0.5" style={{color:'#334155', fontWeight:400}}>
+            <ArrowRightLeft size={9} /> שער דולר רציף: ₪{usdRate.toFixed(3)}
+          </p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={handleLogout} className="bg-white text-slate-400 hover:text-red-500 border border-slate-100 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-colors">
-            <LogOut size={18} />
+        <div className="flex items-center gap-2">
+          <button onClick={() => setIsSettingsOpen(true)} className="flex items-center justify-center w-8 h-8 rounded-full transition-colors" style={{background:'#1e293b', color:'#94a3b8'}}>
+            <Settings size={15} />
           </button>
-          <button onClick={() => { setEditingId(null); setIsAdding(true); }} className="bg-slate-900 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform">
-            <Plus size={22} />
+          <button onClick={fetchMarketPrices} disabled={isRefreshingPrices} className="flex items-center justify-center w-8 h-8 rounded-full transition-colors disabled:opacity-50" style={{background:'#1e293b', color:'#94a3b8'}}>
+            <RefreshCcw size={15} className={isRefreshingPrices ? 'animate-spin' : ''} />
+          </button>
+          <button onClick={handleLogout} className="flex items-center justify-center w-8 h-8 rounded-full transition-colors" style={{background:'#1e293b', color:'#64748b'}}>
+            <LogOut size={15} />
+          </button>
+          <button onClick={() => { setEditingId(null); setIsAdding(true); }} className="flex items-center justify-center w-8 h-8 rounded-full active:scale-90 transition-transform" style={{background:'#3b82f6', color:'#fff'}}>
+            <Plus size={20} />
           </button>
         </div>
       </header>
 
-      <main className="px-4 py-6 max-w-md mx-auto">
+      <main className="px-4 py-4 max-w-md mx-auto">
 
         {activeTab === 'home' && (
-          <div className="space-y-4 animate-in fade-in duration-300">
+          <div className="space-y-3 animate-in fade-in duration-300">
+
             {/* Portfolio Summary Card */}
-            <div className="bg-slate-900 rounded-[28px] p-6 text-white shadow-2xl relative overflow-hidden text-center">
-              <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 pointer-events-none"></div>
-              <p className="text-slate-300 text-sm font-medium mb-1 opacity-80">שווי תיק נוכחי</p>
-              <h2 className="text-4xl font-black tracking-tight mb-1">₪{stats.currentTotalILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h2>
-              <p className="text-base text-slate-400 font-medium mb-5">${stats.currentTotalUSD.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
-              <div className="flex gap-4 border-t border-slate-700/50 pt-4">
+            <div className="rounded-[20px] p-5" style={{background:'#111827', border:'0.5px solid #1e293b'}}>
+              <p className="text-[10px] uppercase tracking-widest mb-1" style={{color:'#475569', fontWeight:400}}>שווי תיק נוכחי</p>
+              <p className="text-[32px] leading-none mb-1" style={{fontWeight:700, color:'#f8fafc', letterSpacing:'-1.5px', direction:'ltr', textAlign:'right'}}>
+                ₪{stats.currentTotalILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </p>
+              <p className="text-[12px] mb-4" style={{color:'#334155', direction:'ltr', textAlign:'right', fontWeight:400}}>
+                ${stats.currentTotalUSD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </p>
+              <div className="flex" style={{borderTop:'0.5px solid #1e293b', paddingTop:'14px'}}>
                 <div className="flex-1">
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">תשואה כוללת</p>
-                  <p className={`font-semibold text-sm flex justify-center items-center gap-1 ${stats.totalChangePct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {stats.totalChangePct >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                    ₪{Math.abs(stats.totalChangeILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                    <span className="text-xs opacity-80" dir="ltr">({stats.totalChangePct > 0 ? '+' : ''}{stats.totalChangePct.toFixed(2)}%)</span>
+                  <p className="text-[9px] uppercase tracking-wider mb-1.5" style={{color:'#475569', fontWeight:400}}>תשואה כוללת</p>
+                  <p className="text-[14px] mb-0.5" style={{fontWeight:600, letterSpacing:'-0.3px', color: stats.totalChangePct >= 0 ? '#22c55e' : '#ef4444', direction:'ltr', textAlign:'right'}}>
+                    {stats.totalChangePct >= 0 ? '+' : '−'}₪{Math.abs(stats.totalChangeILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </p>
+                  <p className="text-[10px]" style={{color: stats.totalChangePct >= 0 ? '#22c55e' : '#ef4444', fontWeight:400, direction:'ltr', textAlign:'right'}}>
+                    {stats.totalChangePct >= 0 ? '+' : ''}{stats.totalChangePct.toFixed(2)}%
                   </p>
                 </div>
-                <div className="flex-1 border-r border-slate-700/50 pr-4">
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">שינוי יומי</p>
-                  <p className={`font-semibold text-sm flex justify-center items-center gap-1 ${stats.dailyChangePct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {stats.dailyChangePct >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                    ₪{Math.abs(stats.dailyChangeILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                    <span className="text-xs opacity-80" dir="ltr">({stats.dailyChangePct > 0 ? '+' : ''}{stats.dailyChangePct.toFixed(2)}%)</span>
+                <div className="flex-1 pr-4" style={{borderRight:'0.5px solid #1e293b'}}>
+                  <p className="text-[9px] uppercase tracking-wider mb-1.5" style={{color:'#475569', fontWeight:400}}>שינוי יומי</p>
+                  <p className="text-[14px] mb-0.5" style={{fontWeight:600, letterSpacing:'-0.3px', color: stats.dailyChangePct >= 0 ? '#22c55e' : '#ef4444', direction:'ltr', textAlign:'right'}}>
+                    {stats.dailyChangePct >= 0 ? '+' : '−'}₪{Math.abs(stats.dailyChangeILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </p>
+                  <p className="text-[10px]" style={{color: stats.dailyChangePct >= 0 ? '#22c55e' : '#ef4444', fontWeight:400, direction:'ltr', textAlign:'right'}}>
+                    {stats.dailyChangePct >= 0 ? '+' : ''}{stats.dailyChangePct.toFixed(2)}%
                   </p>
                 </div>
               </div>
             </div>
 
             {/* Holdings Header */}
-            <div className="flex items-center justify-between px-1">
-              <h3 className="font-bold text-slate-800 text-lg">האחזקות שלי</h3>
+            <div className="flex items-center justify-between px-1 pt-1">
+              <h3 className="text-[10px] uppercase tracking-widest" style={{color:'#334155', fontWeight:500}}>אחזקות</h3>
               <div className="relative">
-                <button onClick={() => setIsSortMenuOpen(!isSortMenuOpen)} className="flex items-center gap-1 text-xs font-medium text-slate-500 bg-white px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-50 transition-colors">
-                  <Filter size={14} /><span>מיון</span>
+                <button onClick={() => setIsSortMenuOpen(!isSortMenuOpen)} className="flex items-center gap-1 text-[10px] px-3 py-1 rounded-full" style={{color:'#475569', background:'#1e293b', fontWeight:400}}>
+                  <Filter size={11} /><span>מיון</span>
                 </button>
                 {isSortMenuOpen && (
-                  <div className="absolute left-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 z-10 py-2 animate-in fade-in zoom-in-95">
+                  <div className="absolute left-0 top-full mt-2 w-48 rounded-xl z-10 py-2 animate-in fade-in zoom-in-95" style={{background:'#1e293b', border:'0.5px solid #334155'}}>
                     {[
                       { id: 'value-desc', label: 'שווי: מהגבוה לנמוך' },
                       { id: 'value-asc', label: 'שווי: מהנמוך לגבוה' },
@@ -599,7 +601,8 @@ const App = () => {
                       { id: 'platform', label: 'לפי פלטפורמה' }
                     ].map(option => (
                       <button key={option.id} onClick={() => { setSortBy(option.id); setIsSortMenuOpen(false); }}
-                        className={`w-full text-right px-4 py-2 text-sm ${sortBy === option.id ? 'bg-blue-50 text-blue-600 font-bold' : 'text-slate-600 hover:bg-slate-50'}`}>
+                        className="w-full text-right px-4 py-2 text-[12px]"
+                        style={{color: sortBy === option.id ? '#3b82f6' : '#94a3b8', fontWeight: sortBy === option.id ? 600 : 400}}>
                         {option.label}
                       </button>
                     ))}
@@ -609,16 +612,14 @@ const App = () => {
             </div>
 
             {holdings.length === 0 ? (
-              <div className="bg-white rounded-3xl p-8 text-center shadow-sm border border-slate-100 mt-4">
-                <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                  <Briefcase size={32} />
-                </div>
-                <p className="text-slate-500 font-medium mb-4">התיק שלך עדיין ריק.</p>
-                <button onClick={() => setIsAdding(true)} className="text-blue-600 font-bold bg-blue-50 px-6 py-2 rounded-full">הוסף נכס ראשון</button>
+              <div className="rounded-[20px] p-8 text-center" style={{background:'#111827', border:'0.5px solid #1e293b'}}>
+                <Briefcase size={32} className="mx-auto mb-3" style={{color:'#334155'}} />
+                <p className="text-sm mb-4" style={{color:'#475569'}}>התיק שלך עדיין ריק.</p>
+                <button onClick={() => setIsAdding(true)} className="px-6 py-2 rounded-full text-sm" style={{background:'#1e3a5f', color:'#3b82f6', fontWeight:500}}>הוסף נכס ראשון</button>
               </div>
             ) : (
-              <div className="space-y-2">
-                {sortedHoldings.map(h => {
+              <div className="rounded-[20px] overflow-hidden" style={{background:'#111827', border:'0.5px solid #1e293b'}}>
+                {sortedHoldings.map((h, idx) => {
                   const priceForCalc = h.currency === 'ILS' ? h.avgPrice / 100 : h.avgPrice;
                   const mData = marketData[h.symbol.trim().toUpperCase()] || { currentPrice: priceForCalc, dailyChangePct: 0 };
                   const currentPrice = mData.currentPrice;
@@ -635,77 +636,66 @@ const App = () => {
                   const dailyChangeAmtILS = h.currency === 'USD' ? dailyChangeAmt * usdRate : dailyChangeAmt;
                   const isDailyProfit = dailyChangePct >= 0;
                   const isExpanded = expandedHoldingId === h.id;
+                  const totalColor = totalChangePct === 0 ? '#475569' : isProfit ? '#22c55e' : '#ef4444';
+                  const dailyColor = dailyChangePct === 0 ? '#475569' : isDailyProfit ? '#22c55e' : '#ef4444';
 
                   return (
-                    <div
-                      key={h.id}
-                      className="bg-white rounded-[16px] shadow-sm border border-slate-100 overflow-hidden transition-all active:scale-[0.99] cursor-pointer select-none"
+                    <div key={h.id}
+                      style={{borderTop: idx > 0 ? '0.5px solid #1a2332' : 'none'}}
+                      className="cursor-pointer active:opacity-80 transition-opacity select-none"
                       onClick={() => setExpandedHoldingId(isExpanded ? null : h.id)}
                     >
-                      {/* Main row — always visible */}
-                      <div className="px-3 py-2.5 flex items-center gap-2">
-                        {/* Left: symbol + note */}
-                        <div className="flex flex-col min-w-0 w-[23%]">
-                          <span className="font-extrabold text-slate-900 text-sm leading-tight truncate">{h.symbol}</span>
-                          {h.note && <span className="text-[9px] text-slate-400 font-medium truncate leading-tight mt-0.5">{h.note}</span>}
-                          <span className="text-[9px] text-slate-300 font-medium truncate leading-tight">{h.sector}</span>
+                      {/* Main row */}
+                      <div className="px-4 py-3 flex items-center gap-3">
+                        {/* Left: symbol + desc */}
+                        <div className="flex flex-col min-w-0 w-[22%]">
+                          <span className="text-[12px] leading-tight truncate" style={{fontWeight:500, color:'#cbd5e1', letterSpacing:'-0.2px'}}>{h.symbol}</span>
+                          <span className="text-[9px] leading-tight truncate mt-0.5" style={{color:'#2d3f55', fontWeight:400}}>{h.note || h.sector}</span>
                         </div>
 
-                        {/* Center: portfolio value (bold) + current price (gray) */}
+                        {/* Center: worth + price */}
                         <div className="flex flex-col items-center flex-1 min-w-0">
-                          <span className="font-black text-slate-900 text-sm leading-tight" dir="ltr">₪{totalValueILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                          <span className="text-[9px] text-slate-400 font-medium mt-0.5" dir="ltr">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })} נוכחי</span>
+                          <span className="text-[13px] leading-tight" style={{fontWeight:500, color:'#cbd5e1', letterSpacing:'-0.3px'}} dir="ltr">₪{totalValueILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                          <span className="text-[9px] mt-0.5" style={{color:'#2d3f55', fontWeight:400}} dir="ltr">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })} נוכחי</span>
                         </div>
 
-                        {/* Right: two badges side by side — יומי on right, סה"כ on left */}
-                        <div className="flex items-stretch gap-1 shrink-0">
-                          {/* סה"כ — left badge */}
-                          <div className={`flex flex-col items-center py-1.5 rounded-lg w-[56px] ${totalChangePct === 0 ? 'bg-slate-50' : isProfit ? 'bg-green-50' : 'bg-red-50'}`}>
-                            <span className={`text-[8px] font-bold leading-none mb-1 ${totalChangePct === 0 ? 'text-slate-400' : isProfit ? 'text-green-400' : 'text-red-400'}`}>סה״כ</span>
-                            <span className={`text-[11px] font-black leading-none ${totalChangePct === 0 ? 'text-slate-500' : isProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
-                              {isProfit && totalChangePct !== 0 ? '+' : ''}{totalChangePct.toFixed(1)}%
-                            </span>
-                            <span className={`text-[8px] font-semibold leading-none mt-0.5 ${totalChangePct === 0 ? 'text-slate-400' : isProfit ? 'text-green-500' : 'text-red-500'}`} dir="ltr">
-                              {totalChangeAmtILS > 0 ? '+' : totalChangeAmtILS < 0 ? '' : ''}₪{Math.abs(totalChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                            </span>
+                        {/* Right: stats with dividers */}
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <div className="w-px h-7" style={{background:'#1e293b'}} />
+                          <div className="flex flex-col items-center" style={{minWidth:'44px'}}>
+                            <span className="text-[8px] uppercase tracking-wider mb-1" style={{color:'#334155', fontWeight:400}}>יומי</span>
+                            <span className="text-[11px] leading-none" style={{fontWeight:500, color: dailyColor, direction:'ltr'}}>{dailyChangePct === 0 ? '0.00%' : `${isDailyProfit ? '+' : '−'}${Math.abs(dailyChangePct).toFixed(2)}%`}</span>
+                            <span className="text-[8px] mt-0.5" style={{color: dailyColor, fontWeight:400, direction:'ltr'}}>{dailyChangePct === 0 ? '₪0' : `${isDailyProfit ? '+' : '−'}₪${Math.abs(dailyChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</span>
                           </div>
-                          {/* יומי — right badge */}
-                          <div className={`flex flex-col items-center py-1.5 rounded-lg w-[56px] ${dailyChangePct === 0 ? 'bg-slate-50' : isDailyProfit ? 'bg-green-50' : 'bg-red-50'}`}>
-                            <span className={`text-[8px] font-bold leading-none mb-1 ${dailyChangePct === 0 ? 'text-slate-400' : isDailyProfit ? 'text-green-400' : 'text-red-400'}`}>יומי</span>
-                            <span className={`text-[11px] font-black leading-none ${dailyChangePct === 0 ? 'text-slate-500' : isDailyProfit ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
-                              {isDailyProfit && dailyChangePct !== 0 ? '+' : ''}{dailyChangePct.toFixed(2)}%
-                            </span>
-                            <span className={`text-[8px] font-semibold leading-none mt-0.5 ${dailyChangePct === 0 ? 'text-slate-400' : isDailyProfit ? 'text-green-500' : 'text-red-500'}`} dir="ltr">
-                              {dailyChangeAmtILS > 0 ? '+' : ''}₪{Math.abs(dailyChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                            </span>
+                          <div className="w-px h-7" style={{background:'#1e293b'}} />
+                          <div className="flex flex-col items-center" style={{minWidth:'44px'}}>
+                            <span className="text-[8px] uppercase tracking-wider mb-1" style={{color:'#334155', fontWeight:400}}>סה״כ</span>
+                            <span className="text-[11px] leading-none" style={{fontWeight:500, color: totalColor, direction:'ltr'}}>{totalChangePct === 0 ? '0.0%' : `${isProfit ? '+' : '−'}${Math.abs(totalChangePct).toFixed(1)}%`}</span>
+                            <span className="text-[8px] mt-0.5" style={{color: totalColor, fontWeight:400, direction:'ltr'}}>{totalChangePct === 0 ? '₪0' : `${isProfit ? '+' : '−'}₪${Math.abs(totalChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</span>
                           </div>
                         </div>
                       </div>
 
                       {/* Expanded section */}
                       {isExpanded && (
-                        <div className="border-t border-slate-100 px-3 py-2.5 bg-slate-50/60 animate-in fade-in slide-in-from-top-1 duration-200 space-y-2">
-                          {/* Detail row: qty, buy price */}
-                          <div className="flex items-center gap-2 text-[10px] text-slate-500">
-                            <span className="bg-white border border-slate-100 px-2 py-1 rounded-lg font-medium">כמות: <strong className="text-slate-700">{h.quantity}</strong></span>
-                            <span className="bg-white border border-slate-100 px-2 py-1 rounded-lg font-medium">קניה: <strong className="text-slate-700" dir="ltr">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>
-                            <span className="bg-white border border-slate-100 px-2 py-1 rounded-lg font-medium flex items-center gap-1">
-                              <Briefcase size={10} />{h.platform}
+                        <div className="px-4 pb-3 animate-in fade-in slide-in-from-top-1 duration-200" style={{borderTop:'0.5px solid #1a2332'}}>
+                          <div className="flex items-center gap-2 pt-2.5 text-[10px]" style={{color:'#475569'}}>
+                            <span className="px-2 py-1 rounded-lg" style={{background:'#1a2332'}}>כמות: <strong style={{color:'#94a3b8', fontWeight:500}}>{h.quantity}</strong></span>
+                            <span className="px-2 py-1 rounded-lg" style={{background:'#1a2332'}}>קניה: <strong style={{color:'#94a3b8', fontWeight:500}} dir="ltr">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>
+                            <span className="px-2 py-1 rounded-lg flex items-center gap-1" style={{background:'#1a2332'}}>
+                              <Briefcase size={9} />{h.platform}
                             </span>
                           </div>
-                          {/* Action buttons */}
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); openEditModal(h); setExpandedHoldingId(null); }}
-                              className="px-3 py-1.5 text-[11px] font-bold text-slate-500 hover:text-blue-600 bg-white hover:bg-blue-50 border border-slate-100 rounded-lg flex items-center gap-1.5 transition-colors"
-                            >
-                              <Edit2 size={11} />עריכה
+                          <div className="flex items-center justify-end gap-2 mt-2">
+                            <button onClick={(e) => { e.stopPropagation(); openEditModal(h); setExpandedHoldingId(null); }}
+                              className="px-3 py-1.5 text-[11px] rounded-lg flex items-center gap-1.5 transition-colors"
+                              style={{background:'#1a2332', color:'#64748b', fontWeight:400}}>
+                              <Edit2 size={10} />עריכה
                             </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); deleteHolding(h.id); }}
-                              className="px-3 py-1.5 text-[11px] font-bold text-slate-500 hover:text-red-600 bg-white hover:bg-red-50 border border-slate-100 rounded-lg flex items-center gap-1.5 transition-colors"
-                            >
-                              <Trash2 size={11} />מחיקה
+                            <button onClick={(e) => { e.stopPropagation(); deleteHolding(h.id); }}
+                              className="px-3 py-1.5 text-[11px] rounded-lg flex items-center gap-1.5 transition-colors"
+                              style={{background:'#1a2332', color:'#64748b', fontWeight:400}}>
+                              <Trash2 size={10} />מחיקה
                             </button>
                           </div>
                         </div>
@@ -860,19 +850,19 @@ const App = () => {
         )}
       </main>
 
-      <nav className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-xl border-t border-slate-200 pt-2 px-6 z-30" style={{paddingBottom: 'max(env(safe-area-inset-bottom), 12px)'}}>
+      <nav className="fixed bottom-0 left-0 w-full pt-2 px-6 z-30" style={{background:'#0d1117', borderTop:'0.5px solid #1e293b', paddingBottom: 'max(env(safe-area-inset-bottom), 12px)'}}>
         <div className="max-w-md mx-auto flex justify-between items-center">
-          <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 p-2 ${activeTab === 'home' ? 'text-blue-600' : 'text-slate-400'}`}>
-            <Wallet size={24} className={activeTab === 'home' ? 'fill-blue-100' : ''} />
-            <span className="text-[10px] font-bold">התיק שלי</span>
+          <button onClick={() => setActiveTab('home')} className="flex flex-col items-center gap-1 p-2">
+            <Wallet size={22} style={{color: activeTab === 'home' ? '#3b82f6' : '#334155'}} />
+            <span className="text-[10px]" style={{fontWeight:500, color: activeTab === 'home' ? '#3b82f6' : '#334155'}}>התיק שלי</span>
           </button>
-          <button onClick={() => setActiveTab('stats')} className={`flex flex-col items-center gap-1 p-2 ${activeTab === 'stats' ? 'text-blue-600' : 'text-slate-400'}`}>
-            <PieChart size={24} className={activeTab === 'stats' ? 'fill-blue-100' : ''} />
-            <span className="text-[10px] font-bold">פילוחים</span>
+          <button onClick={() => setActiveTab('stats')} className="flex flex-col items-center gap-1 p-2">
+            <PieChart size={22} style={{color: activeTab === 'stats' ? '#3b82f6' : '#334155'}} />
+            <span className="text-[10px]" style={{fontWeight:500, color: activeTab === 'stats' ? '#3b82f6' : '#334155'}}>פילוחים</span>
           </button>
-          <button onClick={() => setActiveTab('ai')} className={`flex flex-col items-center gap-1 p-2 ${activeTab === 'ai' ? 'text-indigo-600' : 'text-slate-400'}`}>
-            <BrainCircuit size={24} className={activeTab === 'ai' ? 'fill-indigo-100' : ''} />
-            <span className="text-[10px] font-bold">ייעוץ חכם</span>
+          <button onClick={() => setActiveTab('ai')} className="flex flex-col items-center gap-1 p-2">
+            <BrainCircuit size={22} style={{color: activeTab === 'ai' ? '#3b82f6' : '#334155'}} />
+            <span className="text-[10px]" style={{fontWeight:500, color: activeTab === 'ai' ? '#3b82f6' : '#334155'}}>ייעוץ חכם</span>
           </button>
         </div>
       </nav>
