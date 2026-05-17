@@ -528,7 +528,7 @@ const App = () => {
       <header className="px-5 py-4 pt-safe flex items-center justify-between sticky top-0 z-20" style={{background:'#0d1117', borderBottom:'0.5px solid #1e293b'}}>
         <div>
           <h1 className="text-xl tracking-tight" style={{fontWeight:700, color:'#f1f5f9', letterSpacing:'-0.4px'}}>MyWealth</h1>
-          <p className="text-[9px] flex items-center gap-1 mt-0.5" style={{color:'#334155', fontWeight:400}}>
+          <p className="text-[9px] flex items-center gap-1 mt-0.5" style={{color:'#64748b', fontWeight:400}}>
             <ArrowRightLeft size={9} /> שער דולר רציף: ₪{usdRate.toFixed(3)}
           </p>
         </div>
@@ -555,16 +555,16 @@ const App = () => {
 
             {/* Portfolio Summary Card */}
             <div className="rounded-[20px] p-5" style={{background:'#111827', border:'0.5px solid #1e293b'}}>
-              <p className="text-[10px] uppercase tracking-widest mb-1" style={{color:'#475569', fontWeight:400}}>שווי תיק נוכחי</p>
+              <p className="text-[10px] uppercase tracking-widest mb-1" style={{color:'#7c8fa3', fontWeight:400}}>שווי תיק נוכחי</p>
               <p className="text-[32px] leading-none mb-1" style={{fontWeight:700, color:'#f8fafc', letterSpacing:'-1.5px', direction:'ltr', textAlign:'right'}}>
                 ₪{stats.currentTotalILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </p>
-              <p className="text-[12px] mb-4" style={{color:'#334155', direction:'ltr', textAlign:'right', fontWeight:400}}>
+              <p className="text-[12px] mb-4" style={{color:'#64748b', direction:'ltr', textAlign:'right', fontWeight:400}}>
                 ${stats.currentTotalUSD.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </p>
               <div className="flex" style={{borderTop:'0.5px solid #1e293b', paddingTop:'14px'}}>
                 <div className="flex-1">
-                  <p className="text-[9px] uppercase tracking-wider mb-1.5" style={{color:'#475569', fontWeight:400}}>תשואה כוללת</p>
+                  <p className="text-[9px] uppercase tracking-wider mb-1.5" style={{color:'#7c8fa3', fontWeight:400}}>תשואה כוללת</p>
                   <p className="text-[14px] mb-0.5" style={{fontWeight:600, letterSpacing:'-0.3px', color: stats.totalChangePct >= 0 ? '#22c55e' : '#ef4444', direction:'ltr', textAlign:'right'}}>
                     {stats.totalChangePct >= 0 ? '+' : '−'}₪{Math.abs(stats.totalChangeILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </p>
@@ -573,7 +573,7 @@ const App = () => {
                   </p>
                 </div>
                 <div className="flex-1 pr-4" style={{borderRight:'0.5px solid #1e293b'}}>
-                  <p className="text-[9px] uppercase tracking-wider mb-1.5" style={{color:'#475569', fontWeight:400}}>שינוי יומי</p>
+                  <p className="text-[9px] uppercase tracking-wider mb-1.5" style={{color:'#7c8fa3', fontWeight:400}}>שינוי יומי</p>
                   <p className="text-[14px] mb-0.5" style={{fontWeight:600, letterSpacing:'-0.3px', color: stats.dailyChangePct >= 0 ? '#22c55e' : '#ef4444', direction:'ltr', textAlign:'right'}}>
                     {stats.dailyChangePct >= 0 ? '+' : '−'}₪{Math.abs(stats.dailyChangeILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </p>
@@ -586,9 +586,9 @@ const App = () => {
 
             {/* Holdings Header */}
             <div className="flex items-center justify-between px-1 pt-1">
-              <h3 className="text-[10px] uppercase tracking-widest" style={{color:'#334155', fontWeight:500}}>אחזקות</h3>
+              <h3 className="text-[10px] uppercase tracking-widest" style={{color:'#64748b', fontWeight:500}}>אחזקות</h3>
               <div className="relative">
-                <button onClick={() => setIsSortMenuOpen(!isSortMenuOpen)} className="flex items-center gap-1 text-[10px] px-3 py-1 rounded-full" style={{color:'#475569', background:'#1e293b', fontWeight:400}}>
+                <button onClick={() => setIsSortMenuOpen(!isSortMenuOpen)} className="flex items-center gap-1 text-[10px] px-3 py-1 rounded-full" style={{color:'#7c8fa3', background:'#1e293b', fontWeight:400}}>
                   <Filter size={11} /><span>מיון</span>
                 </button>
                 {isSortMenuOpen && (
@@ -613,8 +613,8 @@ const App = () => {
 
             {holdings.length === 0 ? (
               <div className="rounded-[20px] p-8 text-center" style={{background:'#111827', border:'0.5px solid #1e293b'}}>
-                <Briefcase size={32} className="mx-auto mb-3" style={{color:'#334155'}} />
-                <p className="text-sm mb-4" style={{color:'#475569'}}>התיק שלך עדיין ריק.</p>
+                <Briefcase size={32} className="mx-auto mb-3" style={{color:'#64748b'}} />
+                <p className="text-sm mb-4" style={{color:'#7c8fa3'}}>התיק שלך עדיין ריק.</p>
                 <button onClick={() => setIsAdding(true)} className="px-6 py-2 rounded-full text-sm" style={{background:'#1e3a5f', color:'#3b82f6', fontWeight:500}}>הוסף נכס ראשון</button>
               </div>
             ) : (
@@ -636,8 +636,8 @@ const App = () => {
                   const dailyChangeAmtILS = h.currency === 'USD' ? dailyChangeAmt * usdRate : dailyChangeAmt;
                   const isDailyProfit = dailyChangePct >= 0;
                   const isExpanded = expandedHoldingId === h.id;
-                  const totalColor = totalChangePct === 0 ? '#475569' : isProfit ? '#22c55e' : '#ef4444';
-                  const dailyColor = dailyChangePct === 0 ? '#475569' : isDailyProfit ? '#22c55e' : '#ef4444';
+                  const totalColor = totalChangePct === 0 ? '#7c8fa3' : isProfit ? '#22c55e' : '#ef4444';
+                  const dailyColor = dailyChangePct === 0 ? '#7c8fa3' : isDailyProfit ? '#22c55e' : '#ef4444';
 
                   return (
                     <div key={h.id}
@@ -650,26 +650,26 @@ const App = () => {
                         {/* Left: symbol + desc */}
                         <div className="flex flex-col min-w-0 w-[22%]">
                           <span className="text-[12px] leading-tight truncate" style={{fontWeight:500, color:'#cbd5e1', letterSpacing:'-0.2px'}}>{h.symbol}</span>
-                          <span className="text-[9px] leading-tight truncate mt-0.5" style={{color:'#2d3f55', fontWeight:400}}>{h.note || h.sector}</span>
+                          <span className="text-[9px] leading-tight truncate mt-0.5" style={{color:'#4a6080', fontWeight:400}}>{h.note || h.sector}</span>
                         </div>
 
                         {/* Center: worth + price */}
                         <div className="flex flex-col items-center flex-1 min-w-0">
                           <span className="text-[13px] leading-tight" style={{fontWeight:500, color:'#cbd5e1', letterSpacing:'-0.3px'}} dir="ltr">₪{totalValueILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                          <span className="text-[9px] mt-0.5" style={{color:'#2d3f55', fontWeight:400}} dir="ltr">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })} נוכחי</span>
+                          <span className="text-[9px] mt-0.5" style={{color:'#4a6080', fontWeight:400}} dir="ltr">{symbolCurrency}{currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })} נוכחי</span>
                         </div>
 
                         {/* Right: stats with dividers */}
                         <div className="flex items-center gap-2.5 shrink-0">
                           <div className="w-px h-7" style={{background:'#1e293b'}} />
                           <div className="flex flex-col items-center" style={{minWidth:'44px'}}>
-                            <span className="text-[8px] uppercase tracking-wider mb-1" style={{color:'#334155', fontWeight:400}}>יומי</span>
+                            <span className="text-[8px] uppercase tracking-wider mb-1" style={{color:'#64748b', fontWeight:400}}>יומי</span>
                             <span className="text-[11px] leading-none" style={{fontWeight:500, color: dailyColor, direction:'ltr'}}>{dailyChangePct === 0 ? '0.00%' : `${isDailyProfit ? '+' : '−'}${Math.abs(dailyChangePct).toFixed(2)}%`}</span>
                             <span className="text-[8px] mt-0.5" style={{color: dailyColor, fontWeight:400, direction:'ltr'}}>{dailyChangePct === 0 ? '₪0' : `${isDailyProfit ? '+' : '−'}₪${Math.abs(dailyChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</span>
                           </div>
                           <div className="w-px h-7" style={{background:'#1e293b'}} />
                           <div className="flex flex-col items-center" style={{minWidth:'44px'}}>
-                            <span className="text-[8px] uppercase tracking-wider mb-1" style={{color:'#334155', fontWeight:400}}>סה״כ</span>
+                            <span className="text-[8px] uppercase tracking-wider mb-1" style={{color:'#64748b', fontWeight:400}}>סה״כ</span>
                             <span className="text-[11px] leading-none" style={{fontWeight:500, color: totalColor, direction:'ltr'}}>{totalChangePct === 0 ? '0.0%' : `${isProfit ? '+' : '−'}${Math.abs(totalChangePct).toFixed(1)}%`}</span>
                             <span className="text-[8px] mt-0.5" style={{color: totalColor, fontWeight:400, direction:'ltr'}}>{totalChangePct === 0 ? '₪0' : `${isProfit ? '+' : '−'}₪${Math.abs(totalChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</span>
                           </div>
@@ -679,7 +679,7 @@ const App = () => {
                       {/* Expanded section */}
                       {isExpanded && (
                         <div className="px-4 pb-3 animate-in fade-in slide-in-from-top-1 duration-200" style={{borderTop:'0.5px solid #1a2332'}}>
-                          <div className="flex items-center gap-2 pt-2.5 text-[10px]" style={{color:'#475569'}}>
+                          <div className="flex items-center gap-2 pt-2.5 text-[10px]" style={{color:'#7c8fa3'}}>
                             <span className="px-2 py-1 rounded-lg" style={{background:'#1a2332'}}>כמות: <strong style={{color:'#94a3b8', fontWeight:500}}>{h.quantity}</strong></span>
                             <span className="px-2 py-1 rounded-lg" style={{background:'#1a2332'}}>קניה: <strong style={{color:'#94a3b8', fontWeight:500}} dir="ltr">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>
                             <span className="px-2 py-1 rounded-lg flex items-center gap-1" style={{background:'#1a2332'}}>
@@ -853,16 +853,16 @@ const App = () => {
       <nav className="fixed bottom-0 left-0 w-full pt-2 px-6 z-30" style={{background:'#0d1117', borderTop:'0.5px solid #1e293b', paddingBottom: 'max(env(safe-area-inset-bottom), 12px)'}}>
         <div className="max-w-md mx-auto flex justify-between items-center">
           <button onClick={() => setActiveTab('home')} className="flex flex-col items-center gap-1 p-2">
-            <Wallet size={22} style={{color: activeTab === 'home' ? '#3b82f6' : '#334155'}} />
-            <span className="text-[10px]" style={{fontWeight:500, color: activeTab === 'home' ? '#3b82f6' : '#334155'}}>התיק שלי</span>
+            <Wallet size={22} style={{color: activeTab === 'home' ? '#3b82f6' : '#64748b'}} />
+            <span className="text-[10px]" style={{fontWeight:500, color: activeTab === 'home' ? '#3b82f6' : '#64748b'}}>התיק שלי</span>
           </button>
           <button onClick={() => setActiveTab('stats')} className="flex flex-col items-center gap-1 p-2">
-            <PieChart size={22} style={{color: activeTab === 'stats' ? '#3b82f6' : '#334155'}} />
-            <span className="text-[10px]" style={{fontWeight:500, color: activeTab === 'stats' ? '#3b82f6' : '#334155'}}>פילוחים</span>
+            <PieChart size={22} style={{color: activeTab === 'stats' ? '#3b82f6' : '#64748b'}} />
+            <span className="text-[10px]" style={{fontWeight:500, color: activeTab === 'stats' ? '#3b82f6' : '#64748b'}}>פילוחים</span>
           </button>
           <button onClick={() => setActiveTab('ai')} className="flex flex-col items-center gap-1 p-2">
-            <BrainCircuit size={22} style={{color: activeTab === 'ai' ? '#3b82f6' : '#334155'}} />
-            <span className="text-[10px]" style={{fontWeight:500, color: activeTab === 'ai' ? '#3b82f6' : '#334155'}}>ייעוץ חכם</span>
+            <BrainCircuit size={22} style={{color: activeTab === 'ai' ? '#3b82f6' : '#64748b'}} />
+            <span className="text-[10px]" style={{fontWeight:500, color: activeTab === 'ai' ? '#3b82f6' : '#64748b'}}>ייעוץ חכם</span>
           </button>
         </div>
       </nav>
