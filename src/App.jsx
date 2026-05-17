@@ -555,7 +555,7 @@ const App = () => {
 
             {/* Portfolio Summary Card */}
             <div className="rounded-[20px] p-5" style={{background:'#111827', border:'0.5px solid #1e293b'}}>
-              <p className="text-[10px] uppercase tracking-widest mb-1" style={{color:'#7c8fa3', fontWeight:400}}>שווי תיק נוכחי</p>
+              <p className="text-[10px] uppercase tracking-widest mb-1" style={{color:'#94a3b8', fontWeight:400}}>שווי תיק נוכחי</p>
               <p className="text-[32px] leading-none mb-1" style={{fontWeight:700, color:'#f8fafc', letterSpacing:'-1.5px', direction:'ltr', textAlign:'right'}}>
                 ₪{stats.currentTotalILS.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </p>
@@ -564,7 +564,7 @@ const App = () => {
               </p>
               <div className="flex" style={{borderTop:'0.5px solid #1e293b', paddingTop:'14px'}}>
                 <div className="flex-1">
-                  <p className="text-[9px] uppercase tracking-wider mb-1.5" style={{color:'#7c8fa3', fontWeight:400}}>תשואה כוללת</p>
+                  <p className="text-[9px] uppercase tracking-wider mb-1.5" style={{color:'#94a3b8', fontWeight:400}}>תשואה כוללת</p>
                   <p className="text-[14px] mb-0.5" style={{fontWeight:600, letterSpacing:'-0.3px', color: stats.totalChangePct >= 0 ? '#22c55e' : '#ef4444', direction:'ltr', textAlign:'right'}}>
                     {stats.totalChangePct >= 0 ? '+' : '−'}₪{Math.abs(stats.totalChangeILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </p>
@@ -573,7 +573,7 @@ const App = () => {
                   </p>
                 </div>
                 <div className="flex-1 pr-4" style={{borderRight:'0.5px solid #1e293b'}}>
-                  <p className="text-[9px] uppercase tracking-wider mb-1.5" style={{color:'#7c8fa3', fontWeight:400}}>שינוי יומי</p>
+                  <p className="text-[9px] uppercase tracking-wider mb-1.5" style={{color:'#94a3b8', fontWeight:400}}>שינוי יומי</p>
                   <p className="text-[14px] mb-0.5" style={{fontWeight:600, letterSpacing:'-0.3px', color: stats.dailyChangePct >= 0 ? '#22c55e' : '#ef4444', direction:'ltr', textAlign:'right'}}>
                     {stats.dailyChangePct >= 0 ? '+' : '−'}₪{Math.abs(stats.dailyChangeILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </p>
@@ -586,9 +586,9 @@ const App = () => {
 
             {/* Holdings Header */}
             <div className="flex items-center justify-between px-1 pt-1">
-              <h3 className="text-[10px] uppercase tracking-widest" style={{color:'#64748b', fontWeight:500}}>אחזקות</h3>
+              <h3 className="text-[13px]" style={{color:'#94a3b8', fontWeight:600, letterSpacing:'0.2px'}}>אחזקות</h3>
               <div className="relative">
-                <button onClick={() => setIsSortMenuOpen(!isSortMenuOpen)} className="flex items-center gap-1 text-[10px] px-3 py-1 rounded-full" style={{color:'#7c8fa3', background:'#1e293b', fontWeight:400}}>
+                <button onClick={() => setIsSortMenuOpen(!isSortMenuOpen)} className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-full" style={{color:'#94a3b8', background:'#1e293b', border:'0.5px solid #334155', fontWeight:400}}>
                   <Filter size={11} /><span>מיון</span>
                 </button>
                 {isSortMenuOpen && (
@@ -614,7 +614,7 @@ const App = () => {
             {holdings.length === 0 ? (
               <div className="rounded-[20px] p-8 text-center" style={{background:'#111827', border:'0.5px solid #1e293b'}}>
                 <Briefcase size={32} className="mx-auto mb-3" style={{color:'#64748b'}} />
-                <p className="text-sm mb-4" style={{color:'#7c8fa3'}}>התיק שלך עדיין ריק.</p>
+                <p className="text-sm mb-4" style={{color:'#94a3b8'}}>התיק שלך עדיין ריק.</p>
                 <button onClick={() => setIsAdding(true)} className="px-6 py-2 rounded-full text-sm" style={{background:'#1e3a5f', color:'#3b82f6', fontWeight:500}}>הוסף נכס ראשון</button>
               </div>
             ) : (
@@ -636,8 +636,8 @@ const App = () => {
                   const dailyChangeAmtILS = h.currency === 'USD' ? dailyChangeAmt * usdRate : dailyChangeAmt;
                   const isDailyProfit = dailyChangePct >= 0;
                   const isExpanded = expandedHoldingId === h.id;
-                  const totalColor = totalChangePct === 0 ? '#7c8fa3' : isProfit ? '#22c55e' : '#ef4444';
-                  const dailyColor = dailyChangePct === 0 ? '#7c8fa3' : isDailyProfit ? '#22c55e' : '#ef4444';
+                  const totalColor = totalChangePct === 0 ? '#94a3b8' : isProfit ? '#22c55e' : '#ef4444';
+                  const dailyColor = dailyChangePct === 0 ? '#94a3b8' : isDailyProfit ? '#22c55e' : '#ef4444';
 
                   return (
                     <div key={h.id}
@@ -679,7 +679,7 @@ const App = () => {
                       {/* Expanded section */}
                       {isExpanded && (
                         <div className="px-4 pb-3 animate-in fade-in slide-in-from-top-1 duration-200" style={{borderTop:'0.5px solid #1a2332'}}>
-                          <div className="flex items-center gap-2 pt-2.5 text-[10px]" style={{color:'#7c8fa3'}}>
+                          <div className="flex items-center gap-2 pt-2.5 text-[10px]" style={{color:'#94a3b8'}}>
                             <span className="px-2 py-1 rounded-lg" style={{background:'#1a2332'}}>כמות: <strong style={{color:'#94a3b8', fontWeight:500}}>{h.quantity}</strong></span>
                             <span className="px-2 py-1 rounded-lg" style={{background:'#1a2332'}}>קניה: <strong style={{color:'#94a3b8', fontWeight:500}} dir="ltr">{symbolCurrency}{priceForCalc.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>
                             <span className="px-2 py-1 rounded-lg flex items-center gap-1" style={{background:'#1a2332'}}>
