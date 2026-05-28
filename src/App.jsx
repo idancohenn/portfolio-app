@@ -361,6 +361,7 @@ const App = () => {
         case 'value-desc': return valueB_ILS - valueA_ILS;
         case 'value-asc': return valueA_ILS - valueB_ILS;
         case 'profit-desc': return profitB - profitA;
+        case 'daily-desc': return (marketData[b.symbol.trim().toUpperCase()]?.dailyChangePct || 0) - (marketData[a.symbol.trim().toUpperCase()]?.dailyChangePct || 0);
         case 'sector': return (a.sector || '').localeCompare(b.sector || '');
         case 'platform': return (a.platform || '').localeCompare(b.platform || '');
         default: return 0;
@@ -596,7 +597,8 @@ const App = () => {
                     {[
                       { id: 'value-desc', label: 'שווי: מהגבוה לנמוך' },
                       { id: 'value-asc', label: 'שווי: מהנמוך לגבוה' },
-                      { id: 'profit-desc', label: 'רווחיות' },
+                      { id: 'profit-desc', label: 'רווחיות כוללת' },
+                      { id: 'daily-desc', label: 'רווחיות יומית' },
                       { id: 'sector', label: 'לפי סקטור' },
                       { id: 'platform', label: 'לפי פלטפורמה' }
                     ].map(option => (
