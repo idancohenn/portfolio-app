@@ -167,28 +167,28 @@ const App = () => {
     let cacheUpdated = false;
 
     const fetchProxy = async (targetUrl, isJson = true) => {
+      const tryFetch = async (proxyUrl) => {
+        const res = await fetch(proxyUrl);
+        if (!res.ok) throw new Error('not ok');
+        const text = await res.text();
+        const parsed = isJson ? JSON.parse(text) : text;
+        if (!parsed) throw new Error('empty');
+        return parsed;
+      };
+
+      const proxies = [
+        tryFetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&disableCache=${Date.now()}`)
+          .then(d => isJson ? (typeof d === 'object' && d.contents ? JSON.parse(d.contents) : d) : d.contents),
+        tryFetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`),
+        tryFetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`),
+      ];
+
+      // Race all proxies — first valid response wins
       try {
-        const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&disableCache=${Date.now()}`);
-        if (res.ok) {
-          const proxyData = await res.json();
-          if (proxyData.contents) return isJson ? JSON.parse(proxyData.contents) : proxyData.contents;
-        }
-      } catch (e) {}
-      try {
-        const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`);
-        if (res.ok) {
-          const text = await res.text();
-          return isJson ? JSON.parse(text) : text;
-        }
-      } catch (e) {}
-      try {
-        const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`);
-        if (res.ok) {
-          const text = await res.text();
-          return isJson ? JSON.parse(text) : text;
-        }
-      } catch (e) {}
-      return null;
+        return await Promise.any(proxies);
+      } catch {
+        return null;
+      }
     };
 
     const uniqueHoldings = Array.from(new Map(holdings.map(h => [h.symbol.trim().toUpperCase(), h])).values());
