@@ -388,7 +388,7 @@ const App = () => {
       const currentPrice = mData.currentPrice;
       const symbolCurrency = h.currency === 'USD' ? '$' : '₪';
       const profitPct = priceForCalc > 0 ? ((currentPrice - priceForCalc) / priceForCalc) * 100 : 0;
-      text += `- [${h.symbol}${h.note ? ` — ${h.note}` : ''}] סקטור: ${h.sector}. כמות: ${h.quantity}. מחיר קניה: ${symbolCurrency}${priceForCalc.toFixed(2)}, מחיר נוכחי: ${symbolCurrency}${currentPrice.toFixed(2)} (תשואה: ${profitPct > 0 ? '+' : ''}${profitPct.toFixed(1)}%).\n`;
+      text += `- [${h.symbol}${h.note ? ` — ${h.note}` : ''}] סקטור: ${h.sector}. פלטפורמה: ${h.platform || 'לא צוין'}. כמות: ${h.quantity}. מחיר קניה: ${symbolCurrency}${priceForCalc.toFixed(2)}, מחיר נוכחי: ${symbolCurrency}${currentPrice.toFixed(2)} (תשואה: ${profitPct > 0 ? '+' : ''}${profitPct.toFixed(1)}%).\n`;
     });
     text += `\nשער דולר רציף לעיונך בעת החישובים: ₪${usdRate.toFixed(3)}\n\n`;
     text += "משימות לניתוח:\n";
