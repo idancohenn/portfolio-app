@@ -166,62 +166,69 @@ const App = () => {
     const newMarketData = { ...marketData };
     let cacheUpdated = false;
 
+    // Fetch with abort timeout
+    const fetchWithTimeout = async (url, timeout = 8000, options = {}) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeout);
+      try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(id);
+        return res;
+      } catch (e) {
+        clearTimeout(id);
+        throw e;
+      }
+    };
+
+    // Race proxies in parallel — first valid wins
     const fetchProxy = async (targetUrl, isJson = true) => {
-      const tryFetch = async (proxyUrl) => {
-        const res = await fetch(proxyUrl);
+      const tryProxy = async (buildUrl) => {
+        const res = await fetchWithTimeout(buildUrl(targetUrl), 8000);
         if (!res.ok) throw new Error('not ok');
         const text = await res.text();
-        const parsed = isJson ? JSON.parse(text) : text;
-        if (!parsed) throw new Error('empty');
-        return parsed;
+        if (isJson) {
+          const j = JSON.parse(text);
+          // allorigins wraps in {contents}
+          return j?.contents ? JSON.parse(j.contents) : j;
+        }
+        return text;
       };
 
-      const proxies = [
-        tryFetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&disableCache=${Date.now()}`)
-          .then(d => isJson ? (typeof d === 'object' && d.contents ? JSON.parse(d.contents) : d) : d.contents),
-        tryFetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`),
-        tryFetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`),
-      ];
-
-      // Race all proxies — first valid response wins
       try {
-        return await Promise.any(proxies);
-      } catch {
-        return null;
-      }
+        return await Promise.any([
+          tryProxy(u => `https://corsproxy.io/?${encodeURIComponent(u)}`),
+          tryProxy(u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}&disableCache=${Date.now()}`),
+          tryProxy(u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`),
+        ]);
+      } catch { return null; }
     };
 
     const uniqueHoldings = Array.from(new Map(holdings.map(h => [h.symbol.trim().toUpperCase(), h])).values());
 
-    const fetchPromises = uniqueHoldings.map(async (h) => {
-      let ticker = h.symbol.trim().toUpperCase();
+    const fetchOne = async (h) => {
+      const ticker = h.symbol.trim().toUpperCase();
+      const cleanTicker = ticker.replace('.TA', '');
+      const isNumeric = /^\d+$/.test(cleanTicker);
+
+      // Skip if manual override set
+      if (isNumericILS(h) && newMarketData[ticker]?.manualOverride) return null;
+
       let currentPrice = null;
       let prevClose = null;
 
-      // Skip numeric ILS if a manual price is already stored
-      if (isNumericILS(h) && newMarketData[ticker]?.manualOverride) {
-        return null; // keep existing manual price
-      }
-
+      // --- USD stocks ---
       if (h.currency === 'USD') {
+        // 1. Finnhub (direct, fastest if key exists)
         if (settings.finnhubKey) {
           try {
-            const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`);
+            const res = await fetchWithTimeout(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`, 5000);
             if (res.ok) {
               const data = await res.json();
-              if (data && !data.error && data.c && data.c > 0) { currentPrice = data.c; prevClose = data.pc; }
+              if (data?.c > 0) { currentPrice = data.c; prevClose = data.pc; }
             }
           } catch(e) {}
         }
-        if (currentPrice === null) {
-          try {
-            const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${ticker}USDT`);
-            if (res.ok) {
-              const data = await res.json();
-              if (data && data.lastPrice) { currentPrice = parseFloat(data.lastPrice); prevClose = parseFloat(data.prevClose); }
-            }
-          } catch(e) {}
-        }
+        // 2. Yahoo Finance via proxy
         if (currentPrice === null) {
           const data = await fetchProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d`, true);
           if (data?.chart?.result?.[0]) {
@@ -231,36 +238,30 @@ const App = () => {
         }
       }
 
+      // --- ILS stocks ---
       if (h.currency === 'ILS') {
-        const cleanTicker = ticker.replace('.TA', '');
-        const numeric = /^\d+$/.test(cleanTicker);
-        try {
-          let yahooTicker = ticker.includes('.') ? ticker : `${ticker}.TA`;
-          const data = await fetchProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1d`, true);
-          if (data?.chart?.result?.[0]) {
-            currentPrice = data.chart.result[0].meta.regularMarketPrice / 100;
-            prevClose = data.chart.result[0].meta.chartPreviousClose / 100;
-          }
-        } catch(e) {}
-        if (currentPrice === null) {
+        // Numeric ILS (e.g. 1148907) → Bizportal is most reliable, go there first
+        if (isNumeric) {
           try {
-            const html = await fetchProxy(`https://www.google.com/finance/quote/${cleanTicker}:TLV`, false);
-            if (html) {
-              let match = html.match(/data-last-price="([0-9.]+)"/);
-              if (!match) match = html.match(/class="YMlKec fxKbKc"[^>]*>([0-9,.]+)/);
-              if (match && match[1]) {
-                currentPrice = parseFloat(match[1].replace(/,/g, ''));
-                if (currentPrice > 100 && numeric) currentPrice /= 100;
-              }
+            const data = await fetchProxy(`https://gw.bizportal.co.il/api/quote/paper/${cleanTicker}`, true);
+            if (data?.lastRate > 0) {
+              currentPrice = parseFloat(data.lastRate) / 100;
+              prevClose = parseFloat(data.baseRate) / 100;
             }
           } catch(e) {}
         }
-        if (currentPrice === null && numeric) {
+
+        // Named ILS (e.g. TEVA.TA) → Yahoo Finance
+        if (currentPrice === null) {
           try {
-            const data = await fetchProxy(`https://gw.bizportal.co.il/api/quote/paper/${cleanTicker}`, true);
-            if (data && data.lastRate > 0) {
-              currentPrice = parseFloat(data.lastRate) / 100;
-              prevClose = parseFloat(data.baseRate) / 100;
+            const yahooTicker = ticker.includes('.') ? ticker : `${ticker}.TA`;
+            const data = await fetchProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1d`, true);
+            if (data?.chart?.result?.[0]) {
+              const meta = data.chart.result[0].meta;
+              // Numeric symbols on Yahoo come in agorot, named ones in shekels
+              const divisor = isNumeric ? 100 : 1;
+              currentPrice = meta.regularMarketPrice / divisor;
+              prevClose = meta.chartPreviousClose / divisor;
             }
           } catch(e) {}
         }
@@ -272,14 +273,21 @@ const App = () => {
       }
       console.warn(`Could not update price for ${ticker}`);
       return null;
-    });
+    };
 
-    const results = await Promise.all(fetchPromises);
-    results.forEach(res => {
-      if (res) { newMarketData[res.symbol] = { currentPrice: res.currentPrice, dailyChangePct: res.dailyChangePct, manualOverride: false }; cacheUpdated = true; }
-    });
+    // Fetch all in parallel, update UI as each one comes in
+    const promises = uniqueHoldings.map(h =>
+      fetchOne(h).then(res => {
+        if (res) {
+          newMarketData[res.symbol] = { currentPrice: res.currentPrice, dailyChangePct: res.dailyChangePct, manualOverride: false };
+          cacheUpdated = true;
+          // Update UI immediately for this holding, don't wait for all
+          setMarketData({ ...newMarketData });
+        }
+      })
+    );
 
-    setMarketData(newMarketData);
+    await Promise.all(promises);
     setIsRefreshingPrices(false);
 
     if (cacheUpdated && user) {
