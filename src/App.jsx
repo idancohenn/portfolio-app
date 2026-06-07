@@ -764,50 +764,80 @@ const App = () => {
     return rects;
   };
 
-  const formatTreemapLabel = (symbol) => {
-    const clean = String(symbol || '').trim();
-    if (clean.length <= 6) return clean;
-    return `${clean.slice(0, 4)}…`;
-  };
-
-  // Treemap Component - visual representation of portfolio allocation
+  // Treemap Component - top holdings + grouped "other"
   const Treemap = () => {
-    const treemapData = useMemo(() => {
-      return holdings.map(h => {
+    const TOP_COUNT = 5;
+
+    const { treemapItems, groupedCount } = useMemo(() => {
+      const all = holdings.map(h => {
         const ticker = h.symbol.trim().toUpperCase();
         const isILS = h.currency === 'ILS';
         const mData = marketData[ticker] || { currentPrice: isILS ? h.avgPrice / 100 : h.avgPrice, dailyChangePct: 0 };
         const valueInCurrency = h.quantity * mData.currentPrice;
         const valueILS = isILS ? valueInCurrency : valueInCurrency * usdRate;
         return {
-          symbol: h.symbol.trim().toUpperCase(),
+          symbol: ticker,
+          label: h.note?.trim() || ticker,
           value: valueILS,
           change: mData.dailyChangePct || 0,
-          sector: h.sector
         };
       }).sort((a, b) => b.value - a.value);
+
+      if (all.length <= TOP_COUNT + 1) {
+        return { treemapItems: all, groupedCount: 0 };
+      }
+
+      const top = all.slice(0, TOP_COUNT);
+      const rest = all.slice(TOP_COUNT);
+      const restValue = rest.reduce((sum, item) => sum + item.value, 0);
+      const restChange = restValue > 0
+        ? rest.reduce((sum, item) => sum + item.change * item.value, 0) / restValue
+        : 0;
+
+      return {
+        treemapItems: [
+          ...top,
+          {
+            symbol: '__OTHER__',
+            label: `אחר (${rest.length})`,
+            value: restValue,
+            change: restChange,
+            isGrouped: true,
+          }
+        ],
+        groupedCount: rest.length,
+      };
     }, [holdings, marketData, usdRate]);
 
-    const totalValue = treemapData.reduce((sum, d) => sum + d.value, 0);
+    const totalValue = treemapItems.reduce((sum, d) => sum + d.value, 0);
     if (totalValue === 0) return null;
 
     const width = 300;
     const height = 220;
-    const rects = layoutTreemap(treemapData, width, height);
+    const rects = layoutTreemap(treemapItems, width, height);
 
     return (
       <div className="bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
-        <h3 className="font-bold text-slate-600 mb-4 flex items-center gap-2">
-          <BarChart3 size={18} /> מפת התיק
-        </h3>
+        <div className="mb-4">
+          <h3 className="font-bold text-slate-600 flex items-center gap-2">
+            <BarChart3 size={18} /> מפת התיק
+          </h3>
+          {groupedCount > 0 && (
+            <p className="text-[10px] text-slate-400 mt-1">
+              {TOP_COUNT} הגדולות + {groupedCount} נוספות
+            </p>
+          )}
+        </div>
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ maxHeight: '240px' }} preserveAspectRatio="xMidYMid meet">
           {rects.map(rect => {
-            const fillColor = rect.change >= 0 ? '#22c55e' : '#ef4444';
-            const fillOpacity = 0.25 + Math.min(Math.abs(rect.change) / 12, 0.55);
+            const isGrouped = rect.isGrouped;
+            const fillColor = isGrouped ? '#94a3b8' : (rect.change >= 0 ? '#22c55e' : '#ef4444');
+            const fillOpacity = isGrouped ? 0.35 : 0.25 + Math.min(Math.abs(rect.change) / 12, 0.55);
             const showLabel = rect.w > 34 && rect.h > 28;
-            const showMeta = rect.w > 52 && rect.h > 42;
-            const label = formatTreemapLabel(rect.symbol);
+            const showMeta = rect.w > 48 && rect.h > 38;
+            const label = rect.label?.length > 8 ? `${rect.label.slice(0, 7)}…` : (rect.label || rect.symbol);
             const changeText = `${rect.change >= 0 ? '+' : ''}${rect.change.toFixed(1)}%`;
+            const metaText = `\u200E${(rect.ratio * 100).toFixed(0)}% · ${changeText}`;
 
             return (
               <g key={rect.symbol}>
@@ -843,8 +873,9 @@ const App = () => {
                         dominantBaseline="middle"
                         fill="#64748b"
                         fontSize="9"
+                        direction="ltr"
                       >
-                        {changeText} · {(rect.ratio * 100).toFixed(0)}%
+                        {metaText}
                       </text>
                     )}
                   </>
