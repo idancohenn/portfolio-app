@@ -695,6 +695,81 @@ const App = () => {
     );
   };
 
+  // Squarified treemap layout — area proportional to portfolio weight
+  const layoutTreemap = (items, width, height) => {
+    const total = items.reduce((sum, item) => sum + item.value, 0);
+    if (total <= 0) return [];
+
+    const nodes = items
+      .map(item => ({ ...item, area: (item.value / total) * width * height }))
+      .sort((a, b) => b.area - a.area);
+
+    const rects = [];
+
+    const worstAspectRatio = (row, side) => {
+      const rowArea = row.reduce((sum, node) => sum + node.area, 0);
+      const thickness = rowArea / side;
+      return Math.max(...row.map(node => {
+        const length = node.area / thickness;
+        return Math.max(thickness / length, length / thickness);
+      }));
+    };
+
+    const layoutRow = (row, x, y, w, h) => {
+      const rowArea = row.reduce((sum, node) => sum + node.area, 0);
+      const horizontal = w >= h;
+      const fixed = horizontal ? h : w;
+      const thickness = rowArea / fixed;
+      let offset = 0;
+
+      row.forEach(node => {
+        const length = node.area / thickness;
+        const rect = horizontal
+          ? { ...node, x: x + offset, y, w: length, h: thickness, ratio: node.value / total }
+          : { ...node, x, y: y + offset, w: thickness, h: length, ratio: node.value / total };
+        rects.push(rect);
+        offset += length;
+      });
+
+      return horizontal
+        ? { x, y: y + thickness, w, h: h - thickness }
+        : { x: x + thickness, y, w: w - thickness, h };
+    };
+
+    const squarify = (children, x, y, w, h) => {
+      if (!children.length || w <= 0 || h <= 0) return;
+
+      if (children.length === 1) {
+        rects.push({ ...children[0], x, y, w, h, ratio: children[0].value / total });
+        return;
+      }
+
+      let row = [children[0]];
+      let index = 1;
+      const side = Math.min(w, h);
+
+      while (index < children.length) {
+        const candidate = [...row, children[index]];
+        if (worstAspectRatio(candidate, side) <= worstAspectRatio(row, side)) {
+          row = candidate;
+          index += 1;
+        } else break;
+      }
+
+      const next = layoutRow(row, x, y, w, h);
+      squarify(children.slice(row.length), next.x, next.y, next.w, next.h);
+    };
+
+    squarify(nodes, 0, 0, width, height);
+    return rects;
+  };
+
+  const formatTreemapLabel = (symbol) => {
+    const clean = String(symbol || '').trim();
+    if (clean.length <= 6) return clean;
+    return `${clean.slice(0, 4)}…`;
+  };
+
   // Treemap Component - visual representation of portfolio allocation
   const Treemap = () => {
     const treemapData = useMemo(() => {
@@ -705,7 +780,7 @@ const App = () => {
         const valueInCurrency = h.quantity * mData.currentPrice;
         const valueILS = isILS ? valueInCurrency : valueInCurrency * usdRate;
         return {
-          symbol: h.symbol,
+          symbol: h.symbol.trim().toUpperCase(),
           value: valueILS,
           change: mData.dailyChangePct || 0,
           sector: h.sector
@@ -716,48 +791,62 @@ const App = () => {
     const totalValue = treemapData.reduce((sum, d) => sum + d.value, 0);
     if (totalValue === 0) return null;
 
-    // Simple treemap layout (horizontal strips)
     const width = 300;
-    const height = 200;
-    let y = 0;
-    const rects = treemapData.map(item => {
-      const ratio = item.value / totalValue;
-      const rectHeight = Math.max(ratio * height, 20);
-      const rect = { ...item, x: 0, y, w: width, h: rectHeight, ratio };
-      y += rectHeight;
-      return rect;
-    });
+    const height = 220;
+    const rects = layoutTreemap(treemapData, width, height);
 
     return (
       <div className="bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
         <h3 className="font-bold text-slate-600 mb-4 flex items-center gap-2">
           <BarChart3 size={18} /> מפת התיק
         </h3>
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{maxHeight: '200px'}}>
-          {rects.map((rect, idx) => {
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ maxHeight: '240px' }} preserveAspectRatio="xMidYMid meet">
+          {rects.map(rect => {
             const fillColor = rect.change >= 0 ? '#22c55e' : '#ef4444';
-            const fillOpacity = 0.2 + Math.min(Math.abs(rect.change) / 10, 0.6);
+            const fillOpacity = 0.25 + Math.min(Math.abs(rect.change) / 12, 0.55);
+            const showLabel = rect.w > 34 && rect.h > 28;
+            const showMeta = rect.w > 52 && rect.h > 42;
+            const label = formatTreemapLabel(rect.symbol);
+            const changeText = `${rect.change >= 0 ? '+' : ''}${rect.change.toFixed(1)}%`;
+
             return (
               <g key={rect.symbol}>
                 <rect
-                  x={rect.x + 1} y={rect.y + 1}
-                  width={rect.w - 2} height={rect.h - 2}
+                  x={rect.x + 1}
+                  y={rect.y + 1}
+                  width={Math.max(rect.w - 2, 0)}
+                  height={Math.max(rect.h - 2, 0)}
                   fill={fillColor}
                   fillOpacity={fillOpacity}
                   stroke="#e2e8f0"
                   strokeWidth="1"
                   rx="4"
                 />
-                {rect.h > 25 && (
+                {showLabel && (
                   <>
-                    <text x={rect.x + 8} y={rect.y + rect.h/2 - 4}
-                          className="text-[11px] font-bold" fill="#334155">
-                      {rect.symbol}
+                    <text
+                      x={rect.x + rect.w / 2}
+                      y={rect.y + rect.h / 2 - (showMeta ? 5 : 0)}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fill="#1e293b"
+                      fontSize={Math.min(12, Math.max(9, rect.w / 7))}
+                      fontWeight="700"
+                    >
+                      {label}
                     </text>
-                    <text x={rect.x + 8} y={rect.y + rect.h/2 + 10}
-                          className="text-[9px]" fill="#64748b">
-                      {rect.change >= 0 ? '+' : ''}{rect.change.toFixed(1)}% | {(rect.ratio * 100).toFixed(0)}%
-                    </text>
+                    {showMeta && (
+                      <text
+                        x={rect.x + rect.w / 2}
+                        y={rect.y + rect.h / 2 + 12}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fill="#64748b"
+                        fontSize="9"
+                      >
+                        {changeText} · {(rect.ratio * 100).toFixed(0)}%
+                      </text>
+                    )}
                   </>
                 )}
               </g>
