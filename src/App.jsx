@@ -67,7 +67,7 @@ const App = () => {
   const [sortBy, setSortBy] = useState('value-desc');
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
 
-  const sectors = ['שבבים', 'תוכנה', 'סייבר', 'פינטק', 'מדדים', 'אנרגיה', 'דאטה סנטרים', 'ביומד', 'פיננסים', 'אחר'];
+  const sectors = ['טכנולוגיה', 'שבבים', 'סייבר', 'פינטק', 'מדדים', 'קרנות סל', 'אגח', 'אנרגיה', 'צרכנות', 'תקשורת', 'דאטה סנטרים', 'ביומד', 'פיננסים', 'אחר'];
   const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
   // Helper: is this a numeric ILS stock?
