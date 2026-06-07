@@ -33,8 +33,8 @@ const App = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
 
-  // Settings State (API Keys)
-  const [settings, setSettings] = useState({ finnhubKey: '' });
+  // Settings State (API Keys + Auto-refresh)
+  const [settings, setSettings] = useState({ finnhubKey: '', autoRefresh: false, refreshInterval: 5 });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Real-time Exchange Rate
@@ -180,114 +180,91 @@ const App = () => {
       }
     };
 
-    // Race proxies in parallel — first valid wins
-    const fetchProxy = async (targetUrl, isJson = true) => {
-      const tryProxy = async (buildUrl) => {
-        const res = await fetchWithTimeout(buildUrl(targetUrl), 8000);
-        if (!res.ok) throw new Error('not ok');
-        const text = await res.text();
-        if (isJson) {
-          const j = JSON.parse(text);
-          // allorigins wraps in {contents}
-          return j?.contents ? JSON.parse(j.contents) : j;
-        }
-        return text;
-      };
-
-      try {
-        return await Promise.any([
-          tryProxy(u => `https://corsproxy.io/?${encodeURIComponent(u)}`),
-          tryProxy(u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}&disableCache=${Date.now()}`),
-          tryProxy(u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`),
-        ]);
-      } catch { return null; }
-    };
-
     const uniqueHoldings = Array.from(new Map(holdings.map(h => [h.symbol.trim().toUpperCase(), h])).values());
 
-    const fetchOne = async (h) => {
+    // Separate holdings by fetch strategy
+    const usdWithFinnhub = [];
+    const needsServerFetch = [];
+
+    uniqueHoldings.forEach(h => {
       const ticker = h.symbol.trim().toUpperCase();
-      const cleanTicker = ticker.replace('.TA', '');
-      const isNumeric = /^\d+$/.test(cleanTicker);
+      // Skip if manual override set for numeric ILS
+      if (isNumericILS(h) && newMarketData[ticker]?.manualOverride) return;
 
-      // Skip if manual override set
-      if (isNumericILS(h) && newMarketData[ticker]?.manualOverride) return null;
+      if (h.currency === 'USD' && settings.finnhubKey) {
+        usdWithFinnhub.push(h);
+      } else {
+        needsServerFetch.push(h);
+      }
+    });
 
-      let currentPrice = null;
-      let prevClose = null;
-
-      // --- USD stocks ---
-      if (h.currency === 'USD') {
-        // 1. Finnhub (direct, fastest if key exists)
-        if (settings.finnhubKey) {
-          try {
-            const res = await fetchWithTimeout(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`, 5000);
-            if (res.ok) {
-              const data = await res.json();
-              if (data?.c > 0) { currentPrice = data.c; prevClose = data.pc; }
-            }
-          } catch(e) {}
-        }
-        // 2. Yahoo Finance via proxy
-        if (currentPrice === null) {
-          const data = await fetchProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d`, true);
-          if (data?.chart?.result?.[0]) {
-            currentPrice = data.chart.result[0].meta.regularMarketPrice;
-            prevClose = data.chart.result[0].meta.chartPreviousClose;
+    // 1. Fetch USD stocks directly from Finnhub (fast, no CORS issues)
+    const finnhubPromises = usdWithFinnhub.map(async (h) => {
+      const ticker = h.symbol.trim().toUpperCase();
+      try {
+        const res = await fetchWithTimeout(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${settings.finnhubKey}`, 5000);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.c > 0) {
+            const dailyChangePct = data.pc > 0 ? ((data.c - data.pc) / data.pc) * 100 : 0;
+            newMarketData[ticker] = { currentPrice: data.c, dailyChangePct, manualOverride: false };
+            cacheUpdated = true;
+            setMarketData({ ...newMarketData });
+            return;
           }
         }
+        // Finnhub failed, add to server fetch queue
+        needsServerFetch.push(h);
+      } catch (e) {
+        // Finnhub failed, add to server fetch queue
+        needsServerFetch.push(h);
       }
+    });
 
-      // --- ILS stocks ---
-      if (h.currency === 'ILS') {
-        // Numeric ILS (e.g. 1148907) → Bizportal is most reliable, go there first
-        if (isNumeric) {
-          try {
-            const data = await fetchProxy(`https://gw.bizportal.co.il/api/quote/paper/${cleanTicker}`, true);
-            if (data?.lastRate > 0) {
-              currentPrice = parseFloat(data.lastRate) / 100;
-              prevClose = parseFloat(data.baseRate) / 100;
-            }
-          } catch(e) {}
-        }
+    await Promise.all(finnhubPromises);
 
-        // Named ILS (e.g. TEVA.TA) → Yahoo Finance
-        if (currentPrice === null) {
-          try {
-            const yahooTicker = ticker.includes('.') ? ticker : `${ticker}.TA`;
-            const data = await fetchProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1d`, true);
-            if (data?.chart?.result?.[0]) {
-              const meta = data.chart.result[0].meta;
-              // Numeric symbols on Yahoo come in agorot, named ones in shekels
-              const divisor = isNumeric ? 100 : 1;
-              currentPrice = meta.regularMarketPrice / divisor;
-              prevClose = meta.chartPreviousClose / divisor;
-            }
-          } catch(e) {}
+    // 2. Fetch remaining stocks via serverless function (handles CORS, ILS stocks)
+    if (needsServerFetch.length > 0) {
+      const tickers = needsServerFetch.map(h => {
+        const ticker = h.symbol.trim().toUpperCase();
+        // Add .TA suffix for ILS stocks if not present
+        if (h.currency === 'ILS' && !ticker.includes('.') && !/^\d+$/.test(ticker)) {
+          return `${ticker}.TA`;
         }
+        return ticker;
+      });
+
+      try {
+        const res = await fetchWithTimeout(`/api/quote?tickers=${encodeURIComponent(tickers.join(','))}`, 15000);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.results) {
+            data.results.forEach(result => {
+              if (result.success) {
+                // Map back to original ticker format stored in holdings
+                const originalTicker = needsServerFetch.find(h => {
+                  const t = h.symbol.trim().toUpperCase();
+                  return t === result.symbol || `${t}.TA` === result.symbol || result.symbol === t.replace('.TA', '');
+                })?.symbol.trim().toUpperCase() || result.symbol;
+
+                newMarketData[originalTicker] = {
+                  currentPrice: result.currentPrice,
+                  dailyChangePct: result.dailyChangePct,
+                  manualOverride: false
+                };
+                cacheUpdated = true;
+              } else {
+                console.warn(`Could not update price for ${result.symbol}: ${result.error}`);
+              }
+            });
+            setMarketData({ ...newMarketData });
+          }
+        }
+      } catch (e) {
+        console.error('Server fetch failed:', e);
       }
+    }
 
-      if (currentPrice !== null && !isNaN(currentPrice) && currentPrice > 0) {
-        const dailyChangePct = prevClose && prevClose > 0 ? ((currentPrice - prevClose) / prevClose) * 100 : 0;
-        return { symbol: ticker, currentPrice, dailyChangePct, manualOverride: false };
-      }
-      console.warn(`Could not update price for ${ticker}`);
-      return null;
-    };
-
-    // Fetch all in parallel, update UI as each one comes in
-    const promises = uniqueHoldings.map(h =>
-      fetchOne(h).then(res => {
-        if (res) {
-          newMarketData[res.symbol] = { currentPrice: res.currentPrice, dailyChangePct: res.dailyChangePct, manualOverride: false };
-          cacheUpdated = true;
-          // Update UI immediately for this holding, don't wait for all
-          setMarketData({ ...newMarketData });
-        }
-      })
-    );
-
-    await Promise.all(promises);
     setIsRefreshingPrices(false);
 
     if (cacheUpdated && user) {
@@ -301,6 +278,19 @@ const App = () => {
     if (holdings.length > 0) fetchMarketPrices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holdings.length, settings.finnhubKey]);
+
+  // Auto-refresh prices at configurable interval
+  useEffect(() => {
+    if (!settings.autoRefresh || holdings.length === 0) return;
+
+    const intervalMs = (settings.refreshInterval || 5) * 60 * 1000;
+    const interval = setInterval(() => {
+      fetchMarketPrices();
+    }, intervalMs);
+
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [holdings.length, settings.autoRefresh, settings.refreshInterval]);
 
   // Save manual price override for numeric ILS stocks
   const saveManualPrice = async (holding, priceStr) => {
@@ -904,6 +894,40 @@ const App = () => {
                   <b>ומה עם מניות ותעודות סל מישראל?</b> לא צריך מפתח! המערכת תשאב אותן עבורך בחינם לגמרי ובאופן אוטומטי.
                 </p>
               </div>
+
+              <div className="border-t border-slate-200 pt-5">
+                <label className="text-[12px] font-bold text-slate-800 uppercase tracking-wider mb-3 block text-green-600">
+                  רענון אוטומטי
+                </label>
+                <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-2xl px-4 py-3">
+                  <span className="text-sm font-bold text-slate-700">עדכן מחירים אוטומטית</span>
+                  <button
+                    type="button"
+                    onClick={() => setSettings({ ...settings, autoRefresh: !settings.autoRefresh })}
+                    className={`relative w-14 h-7 rounded-full transition-colors ${settings.autoRefresh ? 'bg-green-500' : 'bg-slate-300'}`}
+                  >
+                    <span className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${settings.autoRefresh ? 'translate-x-7' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                {settings.autoRefresh && (
+                  <div className="mt-3">
+                    <label className="text-[11px] font-bold text-slate-500 mb-2 block">תדירות עדכון (דקות)</label>
+                    <div className="flex gap-2">
+                      {[1, 2, 5, 10, 15].map(mins => (
+                        <button
+                          key={mins}
+                          type="button"
+                          onClick={() => setSettings({ ...settings, refreshInterval: mins })}
+                          className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all ${settings.refreshInterval === mins ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-600'}`}
+                        >
+                          {mins}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <button type="submit" className="w-full bg-slate-900 text-white font-black text-lg py-3.5 rounded-2xl shadow-xl active:scale-95 transition-all mt-4">
                 שמור ועדכן מחירים
               </button>
