@@ -8,7 +8,7 @@ import {
   PieChart, X, Globe,
   ArrowRightLeft, Sparkles,
   TrendingUp, Edit2, Filter, LogOut, Copy, CheckCircle2, Settings,
-  Newspaper, PencilLine
+  Newspaper, PencilLine, Bell, AlertTriangle, BarChart3, Activity
 } from 'lucide-react';
 
 // --- Firebase Configuration ---
@@ -62,6 +62,15 @@ const App = () => {
   // Real Market Data
   const [marketData, setMarketData] = useState({});
   const [isRefreshingPrices, setIsRefreshingPrices] = useState(false);
+
+  // Daily Snapshots for historical tracking
+  const [dailySnapshots, setDailySnapshots] = useState({});
+
+  // Price Alerts
+  const [alerts, setAlerts] = useState([]);
+  const [triggeredAlerts, setTriggeredAlerts] = useState([]);
+  const [isAlertsModalOpen, setIsAlertsModalOpen] = useState(false);
+  const [alertForm, setAlertForm] = useState({ symbol: '', type: 'below', targetPrice: '' });
 
   // Sorting State
   const [sortBy, setSortBy] = useState('value-desc');
@@ -118,8 +127,26 @@ const App = () => {
         }
       } catch (e) {}
     };
+    const loadDailySnapshots = async () => {
+      try {
+        const snapshotsSnap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'dailySnapshots'));
+        if (snapshotsSnap.exists()) {
+          setDailySnapshots(snapshotsSnap.data());
+        }
+      } catch (e) {}
+    };
+    const loadAlerts = async () => {
+      try {
+        const alertsSnap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'alerts'));
+        if (alertsSnap.exists()) {
+          setAlerts(alertsSnap.data().items || []);
+        }
+      } catch (e) {}
+    };
     fetchSettings();
     loadCache();
+    loadDailySnapshots();
+    loadAlerts();
   }, [user]);
 
   const handleSaveSettings = async (e) => {
@@ -270,8 +297,129 @@ const App = () => {
     if (cacheUpdated && user) {
       try {
         await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'), newMarketData);
+        // Save daily snapshot
+        await saveDailySnapshot(newMarketData);
       } catch (e) {}
     }
+
+    // Check price alerts
+    checkPriceAlerts(newMarketData);
+  };
+
+  // Save daily snapshot for historical tracking
+  const saveDailySnapshot = async (currentMarketData) => {
+    if (!user || holdings.length === 0) return;
+    
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Calculate current stats for snapshot
+    let totalValueILS = 0;
+    let totalValueUSD = 0;
+    const holdingsSnapshot = {};
+    
+    holdings.forEach(h => {
+      const ticker = h.symbol.trim().toUpperCase();
+      const isILS = h.currency === 'ILS';
+      const mData = currentMarketData[ticker] || { currentPrice: isILS ? h.avgPrice / 100 : h.avgPrice };
+      const currentPrice = mData.currentPrice;
+      const valueInCurrency = h.quantity * currentPrice;
+      const valueILS = isILS ? valueInCurrency : valueInCurrency * usdRate;
+      const valueUSD = isILS ? valueInCurrency / usdRate : valueInCurrency;
+      
+      totalValueILS += valueILS;
+      totalValueUSD += valueUSD;
+      holdingsSnapshot[ticker] = { price: currentPrice, value: valueILS, quantity: h.quantity };
+    });
+    
+    const snapshot = {
+      totalValueILS,
+      totalValueUSD,
+      holdings: holdingsSnapshot,
+      usdRate,
+      timestamp: new Date().toISOString()
+    };
+    
+    try {
+      const newSnapshots = { ...dailySnapshots, [today]: snapshot };
+      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'dailySnapshots'), newSnapshots);
+      setDailySnapshots(newSnapshots);
+    } catch (e) {
+      console.error('Failed to save daily snapshot:', e);
+    }
+  };
+
+  // Check price alerts
+  const checkPriceAlerts = (newMarketData) => {
+    const triggered = [];
+    
+    alerts.filter(a => a.active).forEach(alert => {
+      const price = newMarketData[alert.symbol]?.currentPrice;
+      if (!price) return;
+      
+      const shouldTrigger = 
+        (alert.type === 'below' && price <= alert.targetPrice) ||
+        (alert.type === 'above' && price >= alert.targetPrice);
+      
+      if (shouldTrigger) {
+        triggered.push({
+          ...alert,
+          currentPrice: price,
+          triggeredAt: new Date().toISOString()
+        });
+      }
+    });
+    
+    if (triggered.length > 0) {
+      setTriggeredAlerts(triggered);
+      // Mark alerts as triggered
+      const updatedAlerts = alerts.map(a => {
+        const wasTriggered = triggered.find(t => t.id === a.id);
+        return wasTriggered ? { ...a, active: false, triggeredAt: wasTriggered.triggeredAt } : a;
+      });
+      setAlerts(updatedAlerts);
+      saveAlerts(updatedAlerts);
+    }
+  };
+
+  // Save alerts to Firestore
+  const saveAlerts = async (alertsToSave) => {
+    if (!user) return;
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'alerts'), { items: alertsToSave });
+    } catch (e) {}
+  };
+
+  // Add new alert
+  const addAlert = async () => {
+    if (!alertForm.symbol || !alertForm.targetPrice) return;
+    
+    const holding = holdings.find(h => h.symbol.trim().toUpperCase() === alertForm.symbol);
+    const newAlert = {
+      id: crypto.randomUUID(),
+      symbol: alertForm.symbol,
+      type: alertForm.type,
+      targetPrice: parseFloat(alertForm.targetPrice),
+      currency: holding?.currency || 'USD',
+      active: true,
+      createdAt: new Date().toISOString()
+    };
+    
+    const updatedAlerts = [...alerts, newAlert];
+    setAlerts(updatedAlerts);
+    await saveAlerts(updatedAlerts);
+    setAlertForm({ symbol: '', type: 'below', targetPrice: '' });
+  };
+
+  // Delete alert
+  const deleteAlert = async (alertId) => {
+    const updatedAlerts = alerts.filter(a => a.id !== alertId);
+    setAlerts(updatedAlerts);
+    await saveAlerts(updatedAlerts);
+  };
+
+  // Dismiss triggered alert notification
+  const dismissTriggeredAlert = (alertId) => {
+    setTriggeredAlerts(prev => prev.filter(a => a.id !== alertId));
   };
 
   useEffect(() => {
@@ -503,6 +651,408 @@ const App = () => {
     );
   };
 
+  // Sparkline Component - shows 7-day price trend
+  const Sparkline = ({ symbol, width = 120, height = 40 }) => {
+    const data = useMemo(() => {
+      const dates = Object.keys(dailySnapshots).sort().slice(-7);
+      return dates.map(date => dailySnapshots[date]?.holdings?.[symbol]?.price).filter(p => p != null);
+    }, [symbol, dailySnapshots]);
+
+    if (!data || data.length < 2) return null;
+    
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+    
+    const points = data.map((v, i) => {
+      const x = (i / (data.length - 1)) * width;
+      const y = height - 4 - ((v - min) / range) * (height - 8);
+      return `${x},${y}`;
+    }).join(' ');
+    
+    const isUp = data[data.length - 1] >= data[0];
+    const changePercent = ((data[data.length - 1] - data[0]) / data[0] * 100).toFixed(1);
+    
+    return (
+      <div className="rounded-xl p-3" style={{background:'#1a2332'}}>
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-[10px]" style={{color:'#64748b'}}>7 ימים אחרונים</span>
+          <span className="text-[11px] font-bold" style={{color: isUp ? '#22c55e' : '#ef4444'}}>
+            {isUp ? '+' : ''}{changePercent}%
+          </span>
+        </div>
+        <svg width={width} height={height} className="w-full">
+          <polyline
+            points={points}
+            fill="none"
+            stroke={isUp ? '#22c55e' : '#ef4444'}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+    );
+  };
+
+  // Treemap Component - visual representation of portfolio allocation
+  const Treemap = () => {
+    const treemapData = useMemo(() => {
+      return holdings.map(h => {
+        const ticker = h.symbol.trim().toUpperCase();
+        const isILS = h.currency === 'ILS';
+        const mData = marketData[ticker] || { currentPrice: isILS ? h.avgPrice / 100 : h.avgPrice, dailyChangePct: 0 };
+        const valueInCurrency = h.quantity * mData.currentPrice;
+        const valueILS = isILS ? valueInCurrency : valueInCurrency * usdRate;
+        return {
+          symbol: h.symbol,
+          value: valueILS,
+          change: mData.dailyChangePct || 0,
+          sector: h.sector
+        };
+      }).sort((a, b) => b.value - a.value);
+    }, [holdings, marketData, usdRate]);
+
+    const totalValue = treemapData.reduce((sum, d) => sum + d.value, 0);
+    if (totalValue === 0) return null;
+
+    // Simple treemap layout (horizontal strips)
+    const width = 300;
+    const height = 200;
+    let y = 0;
+    const rects = treemapData.map(item => {
+      const ratio = item.value / totalValue;
+      const rectHeight = Math.max(ratio * height, 20);
+      const rect = { ...item, x: 0, y, w: width, h: rectHeight, ratio };
+      y += rectHeight;
+      return rect;
+    });
+
+    return (
+      <div className="bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
+        <h3 className="font-bold text-slate-600 mb-4 flex items-center gap-2">
+          <BarChart3 size={18} /> מפת התיק
+        </h3>
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{maxHeight: '200px'}}>
+          {rects.map((rect, idx) => {
+            const fillColor = rect.change >= 0 ? '#22c55e' : '#ef4444';
+            const fillOpacity = 0.2 + Math.min(Math.abs(rect.change) / 10, 0.6);
+            return (
+              <g key={rect.symbol}>
+                <rect
+                  x={rect.x + 1} y={rect.y + 1}
+                  width={rect.w - 2} height={rect.h - 2}
+                  fill={fillColor}
+                  fillOpacity={fillOpacity}
+                  stroke="#e2e8f0"
+                  strokeWidth="1"
+                  rx="4"
+                />
+                {rect.h > 25 && (
+                  <>
+                    <text x={rect.x + 8} y={rect.y + rect.h/2 - 4}
+                          className="text-[11px] font-bold" fill="#334155">
+                      {rect.symbol}
+                    </text>
+                    <text x={rect.x + 8} y={rect.y + rect.h/2 + 10}
+                          className="text-[9px]" fill="#64748b">
+                      {rect.change >= 0 ? '+' : ''}{rect.change.toFixed(1)}% | {(rect.ratio * 100).toFixed(0)}%
+                    </text>
+                  </>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+        <p className="text-[10px] text-slate-500 mt-3 text-center">
+          גודל = משקל בתיק | צבע = שינוי יומי
+        </p>
+      </div>
+    );
+  };
+
+  // Performance Chart Component
+  const PerformanceChart = ({ period = '1m' }) => {
+    const [chartPeriod, setChartPeriod] = useState(period);
+    
+    const chartData = useMemo(() => {
+      const allDates = Object.keys(dailySnapshots).sort();
+      const now = new Date();
+      let startDate;
+      
+      switch (chartPeriod) {
+        case '7d': startDate = new Date(now - 7 * 24 * 60 * 60 * 1000); break;
+        case '1m': startDate = new Date(now - 30 * 24 * 60 * 60 * 1000); break;
+        case '3m': startDate = new Date(now - 90 * 24 * 60 * 60 * 1000); break;
+        case '1y': startDate = new Date(now - 365 * 24 * 60 * 60 * 1000); break;
+        default: startDate = new Date(0);
+      }
+      
+      const startStr = startDate.toISOString().split('T')[0];
+      return allDates
+        .filter(d => d >= startStr)
+        .map(d => ({ date: d, value: dailySnapshots[d]?.totalValueILS || 0 }));
+    }, [dailySnapshots, chartPeriod]);
+
+    if (chartData.length < 2) {
+      return (
+        <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-100">
+          <h3 className="font-bold text-slate-600 mb-4 flex items-center gap-2">
+            <Activity size={18} /> ביצועים לאורך זמן
+          </h3>
+          <p className="text-center text-slate-400 py-8 text-sm">
+            צריך לפחות 2 ימים של נתונים.<br/>המשך לרענן מחירים מדי יום.
+          </p>
+        </div>
+      );
+    }
+
+    const values = chartData.map(d => d.value);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    const width = 280;
+    const height = 120;
+    
+    const points = chartData.map((d, i) => {
+      const x = (i / (chartData.length - 1)) * width;
+      const y = height - 10 - ((d.value - min) / range) * (height - 20);
+      return `${x},${y}`;
+    }).join(' ');
+
+    const areaPoints = `0,${height} ${points} ${width},${height}`;
+    const isUp = chartData[chartData.length - 1].value >= chartData[0].value;
+    const changePercent = ((chartData[chartData.length - 1].value - chartData[0].value) / chartData[0].value * 100).toFixed(1);
+
+    return (
+      <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-100">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h3 className="font-bold text-slate-600 flex items-center gap-2">
+              <Activity size={18} /> ביצועים לאורך זמן
+            </h3>
+            <p className="text-lg font-black mt-1" style={{color: isUp ? '#22c55e' : '#ef4444'}}>
+              {isUp ? '+' : ''}{changePercent}%
+            </p>
+          </div>
+          <div className="flex gap-1">
+            {[{id: '7d', label: 'ש׳'}, {id: '1m', label: 'ח׳'}, {id: '3m', label: '3ח׳'}, {id: '1y', label: 'ש׳'}, {id: 'all', label: 'הכל'}].map(p => (
+              <button
+                key={p.id}
+                onClick={() => setChartPeriod(p.id)}
+                className={`px-2 py-1 text-[10px] rounded-lg font-bold transition-all ${chartPeriod === p.id ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-500'}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full">
+          <defs>
+            <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={isUp ? '#22c55e' : '#ef4444'} stopOpacity="0.3" />
+              <stop offset="100%" stopColor={isUp ? '#22c55e' : '#ef4444'} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <polygon points={areaPoints} fill="url(#chartGradient)" />
+          <polyline
+            points={points}
+            fill="none"
+            stroke={isUp ? '#22c55e' : '#ef4444'}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <div className="flex justify-between text-[10px] text-slate-400 mt-2">
+          <span>{chartData[0]?.date}</span>
+          <span>{chartData[chartData.length - 1]?.date}</span>
+        </div>
+      </div>
+    );
+  };
+
+  // Correlation Heatmap Component
+  const CorrelationHeatmap = () => {
+    const correlationData = useMemo(() => {
+      const symbols = holdings.map(h => h.symbol.trim().toUpperCase()).slice(0, 8);
+      const dates = Object.keys(dailySnapshots).sort();
+      
+      if (dates.length < 5 || symbols.length < 2) return null;
+      
+      // Calculate daily returns for each symbol
+      const returns = {};
+      symbols.forEach(symbol => {
+        returns[symbol] = [];
+        for (let i = 1; i < dates.length; i++) {
+          const prev = dailySnapshots[dates[i-1]]?.holdings?.[symbol]?.price;
+          const curr = dailySnapshots[dates[i]]?.holdings?.[symbol]?.price;
+          if (prev && curr && prev > 0) {
+            returns[symbol].push((curr - prev) / prev);
+          }
+        }
+      });
+      
+      // Calculate Pearson correlation
+      const pearson = (x, y) => {
+        const n = Math.min(x.length, y.length);
+        if (n < 3) return 0;
+        const sumX = x.slice(0, n).reduce((a, b) => a + b, 0);
+        const sumY = y.slice(0, n).reduce((a, b) => a + b, 0);
+        const sumXY = x.slice(0, n).reduce((a, b, i) => a + b * y[i], 0);
+        const sumX2 = x.slice(0, n).reduce((a, b) => a + b * b, 0);
+        const sumY2 = y.slice(0, n).reduce((a, b) => a + b * b, 0);
+        const num = n * sumXY - sumX * sumY;
+        const den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+        return den === 0 ? 0 : num / den;
+      };
+      
+      // Build correlation matrix
+      const matrix = {};
+      symbols.forEach(a => {
+        matrix[a] = {};
+        symbols.forEach(b => {
+          matrix[a][b] = pearson(returns[a] || [], returns[b] || []);
+        });
+      });
+      
+      // Find high correlations for insight
+      let highCorrelations = [];
+      symbols.forEach((a, i) => {
+        symbols.slice(i + 1).forEach(b => {
+          if (matrix[a][b] > 0.7) {
+            highCorrelations.push({ a, b, corr: matrix[a][b] });
+          }
+        });
+      });
+      
+      return { symbols, matrix, highCorrelations };
+    }, [holdings, dailySnapshots]);
+
+    if (!correlationData) {
+      return (
+        <div className="bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
+          <h3 className="font-bold text-slate-600 mb-2 flex items-center gap-2">
+            מטריצת קורלציה
+          </h3>
+          <p className="text-center text-slate-400 py-4 text-sm">
+            צריך לפחות 5 ימים של נתונים ו-2 מניות
+          </p>
+        </div>
+      );
+    }
+
+    const { symbols, matrix, highCorrelations } = correlationData;
+    
+    const getColor = (corr) => {
+      if (corr > 0.7) return '#ef4444';
+      if (corr > 0.3) return '#f59e0b';
+      return '#22c55e';
+    };
+
+    return (
+      <div className="bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
+        <h3 className="font-bold text-slate-600 mb-2">מטריצת קורלציה</h3>
+        <p className="text-[10px] text-slate-500 mb-3">
+          אדום = נעים יחד (סיכון), ירוק = מפוזר
+        </p>
+        <div className="grid gap-1" style={{
+          gridTemplateColumns: `32px repeat(${symbols.length}, 1fr)`
+        }}>
+          <div></div>
+          {symbols.map(s => (
+            <div key={s} className="text-[8px] text-center truncate text-slate-500 font-medium">{s.slice(0, 4)}</div>
+          ))}
+          {symbols.map(row => (
+            <React.Fragment key={row}>
+              <div className="text-[8px] text-right pr-1 text-slate-500 font-medium leading-6">{row.slice(0, 4)}</div>
+              {symbols.map(col => (
+                <div
+                  key={col}
+                  className="aspect-square rounded"
+                  style={{
+                    backgroundColor: getColor(matrix[row]?.[col] || 0),
+                    opacity: 0.3 + Math.abs(matrix[row]?.[col] || 0) * 0.7
+                  }}
+                  title={`${row}/${col}: ${((matrix[row]?.[col] || 0) * 100).toFixed(0)}%`}
+                />
+              ))}
+            </React.Fragment>
+          ))}
+        </div>
+        {highCorrelations.length > 0 && (
+          <p className="text-[11px] text-amber-600 mt-3 bg-amber-50 p-2 rounded-lg">
+            <AlertTriangle size={12} className="inline ml-1" />
+            {highCorrelations[0].a} ו-{highCorrelations[0].b} מאוד מתואמות ({(highCorrelations[0].corr * 100).toFixed(0)}%)
+          </p>
+        )}
+        {highCorrelations.length === 0 && symbols.length >= 2 && (
+          <p className="text-[11px] text-green-600 mt-3 bg-green-50 p-2 rounded-lg">
+            <CheckCircle2 size={12} className="inline ml-1" />
+            התיק שלך מפוזר היטב - המניות לא נעות יחד
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  // TWR/IRR Calculations
+  const advancedStats = useMemo(() => {
+    const dates = Object.keys(dailySnapshots).sort();
+    if (dates.length < 2) return null;
+    
+    const firstSnapshot = dailySnapshots[dates[0]];
+    const lastSnapshot = dailySnapshots[dates[dates.length - 1]];
+    
+    if (!firstSnapshot || !lastSnapshot) return null;
+    
+    // Simple TWR approximation (without considering cash flows)
+    const twr = ((lastSnapshot.totalValueILS / firstSnapshot.totalValueILS) - 1) * 100;
+    
+    // Days between first and last snapshot
+    const daysDiff = (new Date(dates[dates.length - 1]) - new Date(dates[0])) / (1000 * 60 * 60 * 24);
+    
+    // Annualized return (IRR approximation)
+    const years = daysDiff / 365;
+    const irr = years > 0 ? (Math.pow(lastSnapshot.totalValueILS / firstSnapshot.totalValueILS, 1 / years) - 1) * 100 : 0;
+    
+    return { twr, irr, days: Math.round(daysDiff) };
+  }, [dailySnapshots]);
+
+  // Alert Notification Component
+  const AlertNotifications = () => {
+    if (triggeredAlerts.length === 0) return null;
+    
+    return (
+      <div className="fixed top-16 left-4 right-4 z-50 space-y-2">
+        {triggeredAlerts.map(alert => (
+          <div
+            key={alert.id}
+            className="bg-yellow-500 text-black rounded-2xl p-4 shadow-lg animate-in slide-in-from-top"
+          >
+            <div className="flex justify-between items-start">
+              <div>
+                <div className="font-bold flex items-center gap-2">
+                  <Bell size={16} /> התראת מחיר!
+                </div>
+                <div className="text-sm mt-1">
+                  {alert.symbol} {alert.type === 'below' ? 'ירד מתחת' : 'עלה מעל'} ל-
+                  {alert.currency === 'USD' ? '$' : '₪'}{alert.targetPrice}
+                </div>
+                <div className="text-xs mt-1 opacity-80">
+                  מחיר נוכחי: {alert.currency === 'USD' ? '$' : '₪'}{alert.currentPrice?.toFixed(2)}
+                </div>
+              </div>
+              <button onClick={() => dismissTriggeredAlert(alert.id)} className="p-1 hover:bg-yellow-400 rounded">
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50"><RefreshCcw className="animate-spin text-blue-600" /></div>;
 
   if (!user) {
@@ -523,6 +1073,9 @@ const App = () => {
 
   return (
     <div className="min-h-screen font-sans pb-24" style={{background:'#0d1117', color:'#e2e8f0'}} dir="rtl">
+      
+      {/* Alert Notifications */}
+      <AlertNotifications />
 
       <header className="px-5 py-4 pt-safe flex items-center justify-between sticky top-0 z-20" style={{background:'#0d1117', borderBottom:'0.5px solid #1e293b'}}>
         <div>
@@ -686,17 +1239,35 @@ const App = () => {
                               <Briefcase size={9} />{h.platform}
                             </span>
                           </div>
-                          <div className="flex items-center justify-end gap-2 mt-2">
-                            <button onClick={(e) => { e.stopPropagation(); openEditModal(h); setExpandedHoldingId(null); }}
+                          
+                          {/* Sparkline - 7 day trend */}
+                          <div className="mt-3">
+                            <Sparkline symbol={h.symbol.trim().toUpperCase()} />
+                          </div>
+                          
+                          <div className="flex items-center justify-between gap-2 mt-3">
+                            <button 
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                setAlertForm({ symbol: h.symbol.trim().toUpperCase(), type: 'below', targetPrice: '' });
+                                setActiveTab('alerts');
+                              }}
                               className="px-3 py-1.5 text-[11px] rounded-lg flex items-center gap-1.5 transition-colors"
-                              style={{background:'#1a2332', color:'#64748b', fontWeight:400}}>
-                              <Edit2 size={10} />עריכה
+                              style={{background:'#1a2332', color:'#f59e0b', fontWeight:400}}>
+                              <Bell size={10} />התראה
                             </button>
-                            <button onClick={(e) => { e.stopPropagation(); deleteHolding(h.id); }}
-                              className="px-3 py-1.5 text-[11px] rounded-lg flex items-center gap-1.5 transition-colors"
-                              style={{background:'#1a2332', color:'#64748b', fontWeight:400}}>
-                              <Trash2 size={10} />מחיקה
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button onClick={(e) => { e.stopPropagation(); openEditModal(h); setExpandedHoldingId(null); }}
+                                className="px-3 py-1.5 text-[11px] rounded-lg flex items-center gap-1.5 transition-colors"
+                                style={{background:'#1a2332', color:'#64748b', fontWeight:400}}>
+                                <Edit2 size={10} />עריכה
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); deleteHolding(h.id); }}
+                                className="px-3 py-1.5 text-[11px] rounded-lg flex items-center gap-1.5 transition-colors"
+                                style={{background:'#1a2332', color:'#64748b', fontWeight:400}}>
+                                <Trash2 size={10} />מחיקה
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -709,10 +1280,42 @@ const App = () => {
         )}
 
         {activeTab === 'stats' && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <h2 className="text-2xl font-black text-slate-800 mb-2">פילוח התיק</h2>
-            <div className="bg-white p-6 rounded-[28px] shadow-sm border border-slate-100">
-              <h3 className="font-bold text-slate-600 mb-6 flex items-center gap-2"><PieChart size={18} /> פיזור סקטוריאלי</h3>
+          <div className="space-y-4 animate-in fade-in duration-300">
+            <h2 className="text-xl font-black text-white mb-2">תובנות ופילוחים</h2>
+            
+            {/* Performance Chart */}
+            <PerformanceChart />
+            
+            {/* TWR/IRR Stats */}
+            {advancedStats && (
+              <div className="bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
+                <h3 className="font-bold text-slate-600 mb-3 text-sm">תשואה מתקדמת</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-slate-50 rounded-xl p-3">
+                    <div className="text-[10px] text-slate-500 mb-1">תשואה שנתית (IRR)</div>
+                    <div className="text-lg font-black" style={{color: advancedStats.irr >= 0 ? '#22c55e' : '#ef4444'}}>
+                      {advancedStats.irr >= 0 ? '+' : ''}{advancedStats.irr.toFixed(1)}%
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-3">
+                    <div className="text-[10px] text-slate-500 mb-1">תשואה כוללת ({advancedStats.days} ימים)</div>
+                    <div className="text-lg font-black" style={{color: advancedStats.twr >= 0 ? '#22c55e' : '#ef4444'}}>
+                      {advancedStats.twr >= 0 ? '+' : ''}{advancedStats.twr.toFixed(1)}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Treemap */}
+            {holdings.length > 0 && <Treemap />}
+            
+            {/* Correlation Heatmap */}
+            <CorrelationHeatmap />
+            
+            {/* Sector Donut */}
+            <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-100">
+              <h3 className="font-bold text-slate-600 mb-4 flex items-center gap-2"><PieChart size={18} /> פיזור סקטוריאלי</h3>
               {holdings.length > 0 ? (
                 <>
                   <div className="relative">
@@ -722,7 +1325,7 @@ const App = () => {
                       <span className="text-[10px] text-slate-400 font-bold uppercase">סקטורים</span>
                     </div>
                   </div>
-                  <div className="mt-8 space-y-3">
+                  <div className="mt-6 space-y-2">
                     {stats.sectorStats.map(s => (
                       <div key={s.name} className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2">
@@ -737,11 +1340,13 @@ const App = () => {
                   </div>
                 </>
               ) : (
-                <p className="text-center text-slate-400 py-10">אין נתונים להצגה</p>
+                <p className="text-center text-slate-400 py-8">אין נתונים להצגה</p>
               )}
             </div>
-            <div className="bg-white p-6 rounded-[28px] shadow-sm border border-slate-100">
-              <h3 className="font-bold text-slate-600 mb-6 flex items-center gap-2"><Globe size={18} /> חשיפה גיאוגרפית</h3>
+            
+            {/* Geographic Exposure */}
+            <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-100">
+              <h3 className="font-bold text-slate-600 mb-4 flex items-center gap-2"><Globe size={18} /> חשיפה גיאוגרפית</h3>
               <div className="h-4 w-full flex rounded-full overflow-hidden mb-4 shadow-inner bg-slate-100">
                 <div style={{ width: `${stats.geoForeign}%` }} className="bg-blue-500 h-full transition-all"></div>
                 <div style={{ width: `${stats.geoLocal}%` }} className="bg-orange-400 h-full transition-all"></div>
@@ -761,6 +1366,128 @@ const App = () => {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'alerts' && (
+          <div className="space-y-4 animate-in fade-in duration-300">
+            <h2 className="text-xl font-black text-white mb-2">התראות מחיר</h2>
+            
+            {/* Add Alert Form */}
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-[24px] p-5 border border-slate-700/50">
+              <h3 className="font-bold text-white mb-4 flex items-center gap-2">
+                <Bell size={18} className="text-yellow-400" /> הוסף התראה חדשה
+              </h3>
+              
+              <div className="space-y-3">
+                <select
+                  value={alertForm.symbol}
+                  onChange={e => setAlertForm({...alertForm, symbol: e.target.value})}
+                  className="w-full bg-slate-700 border border-slate-600 rounded-xl p-3 text-white font-medium"
+                >
+                  <option value="">בחר מניה...</option>
+                  {holdings.map(h => (
+                    <option key={h.id} value={h.symbol.trim().toUpperCase()}>
+                      {h.symbol} {h.note ? `(${h.note})` : ''}
+                    </option>
+                  ))}
+                </select>
+                
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setAlertForm({...alertForm, type: 'below'})}
+                    className={`flex-1 py-3 rounded-xl font-bold transition-all ${alertForm.type === 'below' ? 'bg-red-500 text-white' : 'bg-slate-700 text-slate-400'}`}
+                  >
+                    יורד מתחת ל-
+                  </button>
+                  <button
+                    onClick={() => setAlertForm({...alertForm, type: 'above'})}
+                    className={`flex-1 py-3 rounded-xl font-bold transition-all ${alertForm.type === 'above' ? 'bg-green-500 text-white' : 'bg-slate-700 text-slate-400'}`}
+                  >
+                    עולה מעל
+                  </button>
+                </div>
+                
+                <input
+                  type="number"
+                  step="any"
+                  placeholder="מחיר יעד"
+                  value={alertForm.targetPrice}
+                  onChange={e => setAlertForm({...alertForm, targetPrice: e.target.value})}
+                  className="w-full bg-slate-700 border border-slate-600 rounded-xl p-3 text-white font-medium"
+                />
+                
+                <button 
+                  onClick={addAlert}
+                  disabled={!alertForm.symbol || !alertForm.targetPrice}
+                  className="w-full bg-yellow-500 text-black font-black py-3.5 rounded-xl active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  הוסף התראה
+                </button>
+              </div>
+            </div>
+            
+            {/* Active Alerts */}
+            {alerts.filter(a => a.active).length > 0 && (
+              <div className="bg-white rounded-[24px] p-5 shadow-sm border border-slate-100">
+                <h3 className="font-bold text-slate-700 mb-4">התראות פעילות</h3>
+                <div className="space-y-2">
+                  {alerts.filter(a => a.active).map(alert => {
+                    const currentPrice = marketData[alert.symbol]?.currentPrice;
+                    const progress = currentPrice && alert.targetPrice 
+                      ? alert.type === 'below' 
+                        ? ((currentPrice - alert.targetPrice) / currentPrice * 100)
+                        : ((alert.targetPrice - currentPrice) / alert.targetPrice * 100)
+                      : 0;
+                    
+                    return (
+                      <div key={alert.id} className="flex items-center justify-between bg-slate-50 rounded-xl p-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-800">{alert.symbol}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${alert.type === 'below' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
+                              {alert.type === 'below' ? '↓' : '↑'} {alert.currency === 'USD' ? '$' : '₪'}{alert.targetPrice}
+                            </span>
+                          </div>
+                          {currentPrice && (
+                            <div className="text-[10px] text-slate-500 mt-1">
+                              נוכחי: {alert.currency === 'USD' ? '$' : '₪'}{currentPrice.toFixed(2)}
+                              {progress > 0 && ` | ${Math.abs(progress).toFixed(1)}% עד ליעד`}
+                            </div>
+                          )}
+                        </div>
+                        <button onClick={() => deleteAlert(alert.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            
+            {/* Triggered Alerts History */}
+            {alerts.filter(a => !a.active && a.triggeredAt).length > 0 && (
+              <div className="bg-slate-100 rounded-[24px] p-5">
+                <h3 className="font-bold text-slate-600 mb-3 text-sm">היסטוריית התראות</h3>
+                <div className="space-y-2">
+                  {alerts.filter(a => !a.active && a.triggeredAt).slice(0, 5).map(alert => (
+                    <div key={alert.id} className="flex items-center justify-between text-sm text-slate-500">
+                      <span>{alert.symbol} {alert.type === 'below' ? '↓' : '↑'} {alert.targetPrice}</span>
+                      <span className="text-[10px]">{new Date(alert.triggeredAt).toLocaleDateString('he-IL')}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {alerts.length === 0 && (
+              <div className="bg-slate-800 rounded-[24px] p-8 text-center">
+                <Bell size={40} className="mx-auto mb-4 text-slate-600" />
+                <p className="text-slate-400 mb-2">אין התראות פעילות</p>
+                <p className="text-slate-500 text-sm">הוסף התראה כדי לקבל עדכון כשמניה מגיעה למחיר יעד</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -853,16 +1580,25 @@ const App = () => {
       <nav className="fixed bottom-0 left-0 w-full pt-2 px-6 z-30" style={{background:'#0d1117', borderTop:'0.5px solid #1e293b', paddingBottom: 'max(env(safe-area-inset-bottom), 12px)'}}>
         <div className="max-w-md mx-auto flex justify-between items-center">
           <button onClick={() => setActiveTab('home')} className="flex flex-col items-center gap-1 p-2">
-            <Wallet size={22} style={{color: activeTab === 'home' ? '#3b82f6' : '#64748b'}} />
-            <span className="text-[10px]" style={{fontWeight:500, color: activeTab === 'home' ? '#3b82f6' : '#64748b'}}>התיק שלי</span>
+            <Wallet size={20} style={{color: activeTab === 'home' ? '#3b82f6' : '#64748b'}} />
+            <span className="text-[9px]" style={{fontWeight:500, color: activeTab === 'home' ? '#3b82f6' : '#64748b'}}>התיק</span>
           </button>
           <button onClick={() => setActiveTab('stats')} className="flex flex-col items-center gap-1 p-2">
-            <PieChart size={22} style={{color: activeTab === 'stats' ? '#3b82f6' : '#64748b'}} />
-            <span className="text-[10px]" style={{fontWeight:500, color: activeTab === 'stats' ? '#3b82f6' : '#64748b'}}>פילוחים</span>
+            <PieChart size={20} style={{color: activeTab === 'stats' ? '#3b82f6' : '#64748b'}} />
+            <span className="text-[9px]" style={{fontWeight:500, color: activeTab === 'stats' ? '#3b82f6' : '#64748b'}}>תובנות</span>
+          </button>
+          <button onClick={() => setActiveTab('alerts')} className="flex flex-col items-center gap-1 p-2 relative">
+            <Bell size={20} style={{color: activeTab === 'alerts' ? '#3b82f6' : '#64748b'}} />
+            {alerts.filter(a => a.active).length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                {alerts.filter(a => a.active).length}
+              </span>
+            )}
+            <span className="text-[9px]" style={{fontWeight:500, color: activeTab === 'alerts' ? '#3b82f6' : '#64748b'}}>התראות</span>
           </button>
           <button onClick={() => setActiveTab('ai')} className="flex flex-col items-center gap-1 p-2">
-            <BrainCircuit size={22} style={{color: activeTab === 'ai' ? '#3b82f6' : '#64748b'}} />
-            <span className="text-[10px]" style={{fontWeight:500, color: activeTab === 'ai' ? '#3b82f6' : '#64748b'}}>ייעוץ חכם</span>
+            <BrainCircuit size={20} style={{color: activeTab === 'ai' ? '#3b82f6' : '#64748b'}} />
+            <span className="text-[9px]" style={{fontWeight:500, color: activeTab === 'ai' ? '#3b82f6' : '#64748b'}}>AI</span>
           </button>
         </div>
       </nav>
