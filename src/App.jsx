@@ -8,7 +8,7 @@ import {
   PieChart, X, Globe,
   ArrowRightLeft, Sparkles,
   TrendingUp, Edit2, Filter, LogOut, Copy, CheckCircle2, Settings,
-  Newspaper, PencilLine, Bell, AlertTriangle, BarChart3, Activity
+  Newspaper, PencilLine, Bell, AlertTriangle, Activity
 } from 'lucide-react';
 
 // --- Firebase Configuration ---
@@ -33,9 +33,17 @@ const App = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
 
-  // Settings State (API Keys + Auto-refresh)
-  const [settings, setSettings] = useState({ finnhubKey: '', autoRefresh: false, refreshInterval: 5 });
+  // Settings State (API Keys + Auto-refresh + Telegram)
+  const [settings, setSettings] = useState({
+    finnhubKey: '',
+    autoRefresh: false,
+    refreshInterval: 5,
+    telegramEnabled: false,
+    telegramBotToken: '',
+    telegramChatId: '',
+  });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [telegramSetupMsg, setTelegramSetupMsg] = useState('');
 
   // Real-time Exchange Rate
   const [usdRate, setUsdRate] = useState(3.75);
@@ -371,14 +379,82 @@ const App = () => {
     
     if (triggered.length > 0) {
       setTriggeredAlerts(triggered);
-      // Mark alerts as triggered
       const updatedAlerts = alerts.map(a => {
         const wasTriggered = triggered.find(t => t.id === a.id);
         return wasTriggered ? { ...a, active: false, triggeredAt: wasTriggered.triggeredAt } : a;
       });
       setAlerts(updatedAlerts);
       saveAlerts(updatedAlerts);
+      sendTelegramAlerts(triggered);
     }
+  };
+
+  const sendTelegramMessage = async (message) => {
+    if (!settings.telegramChatId || !settings.telegramBotToken?.trim()) {
+      return { success: false, error: 'Telegram not configured' };
+    }
+
+    try {
+      const res = await fetch('/api/telegram-notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatId: settings.telegramChatId,
+          message,
+          botToken: settings.telegramBotToken || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed' };
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  };
+
+  const sendTelegramAlerts = async (triggered) => {
+    if (!settings.telegramEnabled || !settings.telegramChatId || !settings.telegramBotToken) return;
+
+    for (const alert of triggered) {
+      const currencySymbol = alert.currency === 'USD' ? '$' : '₪';
+      const direction = alert.type === 'below' ? 'ירדה מתחת' : 'עלתה מעל';
+      const message =
+        `🔔 התראת מחיר — MyWealth\n\n` +
+        `${alert.symbol} ${direction} ל-${currencySymbol}${alert.targetPrice}\n` +
+        `מחיר נוכחי: ${currencySymbol}${alert.currentPrice?.toFixed(2)}`;
+
+      await sendTelegramMessage(message);
+    }
+  };
+
+  const fetchTelegramChatId = async () => {
+    if (!settings.telegramBotToken?.trim()) {
+      setTelegramSetupMsg('הכנס קודם Bot Token מ-BotFather');
+      return;
+    }
+    setTelegramSetupMsg('מחפש Chat ID...');
+    try {
+      const res = await fetch('/api/telegram-chat-id', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken: settings.telegramBotToken.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTelegramSetupMsg(data.error || 'שגיאה בחיפוש Chat ID');
+        return;
+      }
+      setSettings(prev => ({ ...prev, telegramChatId: String(data.chatId) }));
+      setTelegramSetupMsg(`נמצא! Chat ID: ${data.chatId}${data.firstName ? ` (${data.firstName})` : ''}`);
+    } catch (e) {
+      setTelegramSetupMsg('שגיאה בחיבור לטלגרם');
+    }
+  };
+
+  const testTelegram = async () => {
+    setTelegramSetupMsg('שולח הודעת בדיקה...');
+    const result = await sendTelegramMessage('✅ MyWealth — חיבור טלגרם עובד! תקבל כאן התראות מחיר.');
+    setTelegramSetupMsg(result.success ? 'הודעת בדיקה נשלחה לטלגרם!' : (result.error || 'שליחה נכשלה'));
   };
 
   // Save alerts to Firestore
@@ -691,202 +767,6 @@ const App = () => {
             strokeLinejoin="round"
           />
         </svg>
-      </div>
-    );
-  };
-
-  // Squarified treemap layout — area proportional to portfolio weight
-  const layoutTreemap = (items, width, height) => {
-    const total = items.reduce((sum, item) => sum + item.value, 0);
-    if (total <= 0) return [];
-
-    const nodes = items
-      .map(item => ({ ...item, area: (item.value / total) * width * height }))
-      .sort((a, b) => b.area - a.area);
-
-    const rects = [];
-
-    const worstAspectRatio = (row, side) => {
-      const rowArea = row.reduce((sum, node) => sum + node.area, 0);
-      const thickness = rowArea / side;
-      return Math.max(...row.map(node => {
-        const length = node.area / thickness;
-        return Math.max(thickness / length, length / thickness);
-      }));
-    };
-
-    const layoutRow = (row, x, y, w, h) => {
-      const rowArea = row.reduce((sum, node) => sum + node.area, 0);
-      const horizontal = w >= h;
-      const fixed = horizontal ? h : w;
-      const thickness = rowArea / fixed;
-      let offset = 0;
-
-      row.forEach(node => {
-        const length = node.area / thickness;
-        const rect = horizontal
-          ? { ...node, x: x + offset, y, w: length, h: thickness, ratio: node.value / total }
-          : { ...node, x, y: y + offset, w: thickness, h: length, ratio: node.value / total };
-        rects.push(rect);
-        offset += length;
-      });
-
-      return horizontal
-        ? { x, y: y + thickness, w, h: h - thickness }
-        : { x: x + thickness, y, w: w - thickness, h };
-    };
-
-    const squarify = (children, x, y, w, h) => {
-      if (!children.length || w <= 0 || h <= 0) return;
-
-      if (children.length === 1) {
-        rects.push({ ...children[0], x, y, w, h, ratio: children[0].value / total });
-        return;
-      }
-
-      let row = [children[0]];
-      let index = 1;
-      const side = Math.min(w, h);
-
-      while (index < children.length) {
-        const candidate = [...row, children[index]];
-        if (worstAspectRatio(candidate, side) <= worstAspectRatio(row, side)) {
-          row = candidate;
-          index += 1;
-        } else break;
-      }
-
-      const next = layoutRow(row, x, y, w, h);
-      squarify(children.slice(row.length), next.x, next.y, next.w, next.h);
-    };
-
-    squarify(nodes, 0, 0, width, height);
-    return rects;
-  };
-
-  // Treemap Component - top holdings + grouped "other"
-  const Treemap = () => {
-    const TOP_COUNT = 5;
-
-    const { treemapItems, groupedCount } = useMemo(() => {
-      const all = holdings.map(h => {
-        const ticker = h.symbol.trim().toUpperCase();
-        const isILS = h.currency === 'ILS';
-        const mData = marketData[ticker] || { currentPrice: isILS ? h.avgPrice / 100 : h.avgPrice, dailyChangePct: 0 };
-        const valueInCurrency = h.quantity * mData.currentPrice;
-        const valueILS = isILS ? valueInCurrency : valueInCurrency * usdRate;
-        return {
-          symbol: ticker,
-          label: h.note?.trim() || ticker,
-          value: valueILS,
-          change: mData.dailyChangePct || 0,
-        };
-      }).sort((a, b) => b.value - a.value);
-
-      if (all.length <= TOP_COUNT + 1) {
-        return { treemapItems: all, groupedCount: 0 };
-      }
-
-      const top = all.slice(0, TOP_COUNT);
-      const rest = all.slice(TOP_COUNT);
-      const restValue = rest.reduce((sum, item) => sum + item.value, 0);
-      const restChange = restValue > 0
-        ? rest.reduce((sum, item) => sum + item.change * item.value, 0) / restValue
-        : 0;
-
-      return {
-        treemapItems: [
-          ...top,
-          {
-            symbol: '__OTHER__',
-            label: `אחר (${rest.length})`,
-            value: restValue,
-            change: restChange,
-            isGrouped: true,
-          }
-        ],
-        groupedCount: rest.length,
-      };
-    }, [holdings, marketData, usdRate]);
-
-    const totalValue = treemapItems.reduce((sum, d) => sum + d.value, 0);
-    if (totalValue === 0) return null;
-
-    const width = 300;
-    const height = 220;
-    const rects = layoutTreemap(treemapItems, width, height);
-
-    return (
-      <div className="bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
-        <div className="mb-4">
-          <h3 className="font-bold text-slate-600 flex items-center gap-2">
-            <BarChart3 size={18} /> מפת התיק
-          </h3>
-          {groupedCount > 0 && (
-            <p className="text-[10px] text-slate-400 mt-1">
-              {TOP_COUNT} הגדולות + {groupedCount} נוספות
-            </p>
-          )}
-        </div>
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ maxHeight: '240px' }} preserveAspectRatio="xMidYMid meet">
-          {rects.map(rect => {
-            const isGrouped = rect.isGrouped;
-            const fillColor = isGrouped ? '#94a3b8' : (rect.change >= 0 ? '#22c55e' : '#ef4444');
-            const fillOpacity = isGrouped ? 0.35 : 0.25 + Math.min(Math.abs(rect.change) / 12, 0.55);
-            const showLabel = rect.w > 34 && rect.h > 28;
-            const showMeta = rect.w > 48 && rect.h > 38;
-            const label = rect.label?.length > 8 ? `${rect.label.slice(0, 7)}…` : (rect.label || rect.symbol);
-            const changeText = `${rect.change >= 0 ? '+' : ''}${rect.change.toFixed(1)}%`;
-            const metaText = `\u200E${(rect.ratio * 100).toFixed(0)}% · ${changeText}`;
-
-            return (
-              <g key={rect.symbol}>
-                <rect
-                  x={rect.x + 1}
-                  y={rect.y + 1}
-                  width={Math.max(rect.w - 2, 0)}
-                  height={Math.max(rect.h - 2, 0)}
-                  fill={fillColor}
-                  fillOpacity={fillOpacity}
-                  stroke="#e2e8f0"
-                  strokeWidth="1"
-                  rx="4"
-                />
-                {showLabel && (
-                  <>
-                    <text
-                      x={rect.x + rect.w / 2}
-                      y={rect.y + rect.h / 2 - (showMeta ? 5 : 0)}
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                      fill="#1e293b"
-                      fontSize={Math.min(12, Math.max(9, rect.w / 7))}
-                      fontWeight="700"
-                    >
-                      {label}
-                    </text>
-                    {showMeta && (
-                      <text
-                        x={rect.x + rect.w / 2}
-                        y={rect.y + rect.h / 2 + 12}
-                        textAnchor="middle"
-                        dominantBaseline="middle"
-                        fill="#64748b"
-                        fontSize="9"
-                        direction="ltr"
-                      >
-                        {metaText}
-                      </text>
-                    )}
-                  </>
-                )}
-              </g>
-            );
-          })}
-        </svg>
-        <p className="text-[10px] text-slate-500 mt-3 text-center">
-          גודל = משקל בתיק | צבע = שינוי יומי
-        </p>
       </div>
     );
   };
@@ -1427,9 +1307,6 @@ const App = () => {
               </div>
             )}
             
-            {/* Treemap */}
-            {holdings.length > 0 && <Treemap />}
-            
             {/* Correlation Heatmap */}
             <CorrelationHeatmap />
             
@@ -1492,6 +1369,42 @@ const App = () => {
         {activeTab === 'alerts' && (
           <div className="space-y-4 animate-in fade-in duration-300">
             <h2 className="text-xl font-black text-white mb-2">התראות מחיר</h2>
+
+            <div className="bg-blue-950/40 border border-blue-800/50 rounded-[20px] p-4 text-[12px] leading-relaxed text-blue-100">
+              <p className="font-bold mb-2 flex items-center gap-2">
+                <Bell size={14} className="text-yellow-400" /> איך ההתראות עובדות?
+              </p>
+              <ul className="space-y-1.5 text-blue-200/90 list-disc list-inside">
+                <li>המערכת בודקת מחירים בכל רענון — ידני (↻) או אוטומטי (בהגדרות)</li>
+                <li>כשמניה מגיעה ליעד — מופיעה <strong className="text-yellow-300">הודעה צהובה בראש המסך</strong></li>
+                {settings.telegramEnabled && settings.telegramChatId ? (
+                  <li>בנוסף — נשלחת <strong className="text-yellow-300">הודעה לטלגרם</strong> (גם כשהאפליקציה סגורה, בזמן רענון)</li>
+                ) : (
+                  <li>לקבלת הודעות בטלגרם — הגדר בוט בהגדרות (⚙️)</li>
+                )}
+                <li>ההתראה נשמרת גם ב"היסטוריית התראות" למטה</li>
+              </ul>
+            </div>
+
+            {triggeredAlerts.length > 0 && (
+              <div className="bg-yellow-500 text-black rounded-[20px] p-4 space-y-2">
+                <p className="font-bold flex items-center gap-2">
+                  <AlertTriangle size={16} /> התראות שהופעלו עכשיו
+                </p>
+                {triggeredAlerts.map(alert => (
+                  <div key={alert.id} className="text-sm flex justify-between items-start gap-2">
+                    <span>
+                      {alert.symbol} {alert.type === 'below' ? 'ירד מתחת' : 'עלה מעל'} ל-
+                      {alert.currency === 'USD' ? '$' : '₪'}{alert.targetPrice}
+                      {' '}(נוכחי: {alert.currency === 'USD' ? '$' : '₪'}{alert.currentPrice?.toFixed(2)})
+                    </span>
+                    <button onClick={() => dismissTriggeredAlert(alert.id)} className="p-1 shrink-0">
+                      <X size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             
             {/* Add Alert Form */}
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-[24px] p-5 border border-slate-700/50">
@@ -1780,6 +1693,67 @@ const App = () => {
                         </button>
                       ))}
                     </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-slate-200 pt-5">
+                <label className="text-[12px] font-bold text-slate-800 uppercase tracking-wider mb-3 block text-sky-600">
+                  התראות טלגרם
+                </label>
+                <div className="flex items-center justify-between bg-sky-50 border border-sky-200 rounded-2xl px-4 py-3 mb-3">
+                  <span className="text-sm font-bold text-slate-700">שלח התראות לטלגרם</span>
+                  <button
+                    type="button"
+                    onClick={() => setSettings({ ...settings, telegramEnabled: !settings.telegramEnabled })}
+                    className={`relative w-14 h-7 rounded-full transition-colors ${settings.telegramEnabled ? 'bg-sky-500' : 'bg-slate-300'}`}
+                  >
+                    <span className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${settings.telegramEnabled ? 'translate-x-7' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+
+                {settings.telegramEnabled && (
+                  <div className="space-y-3 bg-sky-50/50 border border-sky-100 rounded-2xl p-4">
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      <b>הגדרה חד-פעמית:</b><br/>
+                      1. פתח <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-sky-600 underline">@BotFather</a> בטלגרם → /newbot → העתק Token<br/>
+                      2. שלח <b>/start</b> לבוט שיצרת<br/>
+                      3. הדבק Token למטה ולחץ "מצא Chat ID"
+                    </p>
+                    <input
+                      placeholder="Bot Token (מ-BotFather)"
+                      className="w-full bg-white border border-sky-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-sky-400 font-mono text-xs"
+                      value={settings.telegramBotToken || ''}
+                      onChange={e => setSettings({ ...settings, telegramBotToken: e.target.value.trim() })}
+                    />
+                    <div className="flex gap-2">
+                      <input
+                        placeholder="Chat ID"
+                        className="flex-1 bg-white border border-sky-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-sky-400 font-mono text-xs"
+                        value={settings.telegramChatId || ''}
+                        onChange={e => setSettings({ ...settings, telegramChatId: e.target.value.trim() })}
+                      />
+                      <button
+                        type="button"
+                        onClick={fetchTelegramChatId}
+                        className="px-3 py-2 bg-sky-500 text-white text-xs font-bold rounded-xl whitespace-nowrap active:scale-95"
+                      >
+                        מצא Chat ID
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={testTelegram}
+                      disabled={!settings.telegramBotToken || !settings.telegramChatId}
+                      className="w-full py-2.5 bg-white border border-sky-300 text-sky-700 text-sm font-bold rounded-xl disabled:opacity-50"
+                    >
+                      שלח הודעת בדיקה
+                    </button>
+                    {telegramSetupMsg && (
+                      <p className={`text-[11px] font-medium ${telegramSetupMsg.includes('נשלח') || telegramSetupMsg.includes('נמצא') ? 'text-green-600' : 'text-slate-500'}`}>
+                        {telegramSetupMsg}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
