@@ -34,23 +34,33 @@ async function fetchTickerPrice(ticker) {
   let prevClose = null;
   let source = null;
 
-  // Numeric Israeli funds (7-digit codes) are not supported by Yahoo Finance.
-  // They require manual price entry in the app.
+  // Numeric Israeli funds — scrape Bizportal page
   if (isNumeric) {
-    return { symbol: ticker, success: false, error: 'Numeric Israeli funds require manual price entry' };
+    try {
+      const bizData = await fetchBizportal(cleanTicker);
+      if (bizData) {
+        currentPrice = bizData.currentPrice;
+        prevClose = bizData.prevClose;
+        source = 'bizportal';
+      }
+    } catch (e) {
+      console.error(`Bizportal failed for ${ticker}:`, e.message);
+    }
   }
 
-  // Fetch via Yahoo Finance
-  try {
-    const yahooTicker = isILS && !ticker.includes('.') ? `${ticker}.TA` : ticker;
-    const yahooData = await fetchYahoo(yahooTicker);
-    if (yahooData) {
-      currentPrice = yahooData.currentPrice;
-      prevClose = yahooData.prevClose;
-      source = 'yahoo';
+  // Non-numeric stocks — fetch via Yahoo Finance
+  if (currentPrice === null && !isNumeric) {
+    try {
+      const yahooTicker = isILS && !ticker.includes('.') ? `${ticker}.TA` : ticker;
+      const yahooData = await fetchYahoo(yahooTicker);
+      if (yahooData) {
+        currentPrice = yahooData.currentPrice;
+        prevClose = yahooData.prevClose;
+        source = 'yahoo';
+      }
+    } catch (e) {
+      console.error(`Yahoo failed for ${ticker}:`, e.message);
     }
-  } catch (e) {
-    console.error(`Yahoo failed for ${ticker}:`, e.message);
   }
 
   if (currentPrice !== null && !isNaN(currentPrice) && currentPrice > 0) {
@@ -73,6 +83,52 @@ async function fetchTickerPrice(ticker) {
     success: false,
     error: 'Could not fetch price'
   };
+}
+
+async function fetchBizportal(paperId) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(
+      `https://www.bizportal.co.il/capitalmarket/quote/generalview/${paperId}`,
+      {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html',
+        }
+      }
+    );
+    clearTimeout(timeout);
+    if (!response.ok) return null;
+
+    const html = await response.text();
+
+    // All class="num" values on the page, in order
+    const nums = [...html.matchAll(/class="num"[^>]*>([\d,.]+)/g)].map(m =>
+      parseFloat(m[1].replace(/,/g, ''))
+    );
+    if (nums.length === 0) return null;
+
+    const currentRate = nums[0];
+
+    // Base rate sits right after the label "שער בסיס"
+    let baseRate = null;
+    const baseMatch = html.match(/שער בסיס[\s\S]*?class="num"[^>]*>([\d,.]+)/);
+    if (baseMatch) baseRate = parseFloat(baseMatch[1].replace(/,/g, ''));
+
+    if (currentRate > 0) {
+      return {
+        currentPrice: currentRate / 100,
+        prevClose: baseRate ? baseRate / 100 : null,
+      };
+    }
+    return null;
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
 }
 
 async function fetchYahoo(ticker) {
