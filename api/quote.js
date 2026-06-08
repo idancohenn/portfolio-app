@@ -92,10 +92,13 @@ async function fetchBizportal(paperId) {
   try {
     const response = await fetch(
       `https://gw.bizportal.co.il/api/quote/paper/${paperId}`,
-      { 
+      {
         signal: controller.signal,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/plain, */*',
+          'Referer': 'https://www.bizportal.co.il',
+          'Origin': 'https://www.bizportal.co.il',
         }
       }
     );
@@ -119,39 +122,46 @@ async function fetchBizportal(paperId) {
 }
 
 async function fetchYahoo(ticker, isNumericILS = false) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const YAHOO_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://finance.yahoo.com',
+    'Origin': 'https://finance.yahoo.com',
+  };
 
-  try {
-    const response = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d`,
-      { 
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+  const hosts = ['query2.finance.yahoo.com', 'query1.finance.yahoo.com'];
+
+  for (const host of hosts) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const response = await fetch(
+        `https://${host}/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d`,
+        { signal: controller.signal, headers: YAHOO_HEADERS }
+      );
+      clearTimeout(timeout);
+
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      const result = data?.chart?.result?.[0];
+
+      if (result?.meta) {
+        const meta = result.meta;
+        // Numeric ILS symbols on Yahoo come in agorot, divide by 100
+        const divisor = isNumericILS ? 100 : 1;
+        return {
+          currentPrice: meta.regularMarketPrice / divisor,
+          prevClose: meta.chartPreviousClose / divisor
+        };
       }
-    );
-    clearTimeout(timeout);
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    const result = data?.chart?.result?.[0];
-    
-    if (result?.meta) {
-      const meta = result.meta;
-      // Numeric ILS symbols on Yahoo come in agorot, divide by 100
-      const divisor = isNumericILS ? 100 : 1;
-      
-      return {
-        currentPrice: meta.regularMarketPrice / divisor,
-        prevClose: meta.chartPreviousClose / divisor
-      };
+    } catch (e) {
+      clearTimeout(timeout);
+      if (host === hosts[hosts.length - 1]) throw e;
     }
-    return null;
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
   }
+
+  return null;
 }
