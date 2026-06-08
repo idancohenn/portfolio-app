@@ -1,3 +1,5 @@
+import https from 'https';
+
 export default async function handler(req, res) {
   // Enable CORS for the frontend
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -85,50 +87,54 @@ async function fetchTickerPrice(ticker) {
   };
 }
 
-async function fetchBizportal(paperId) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-
-  try {
-    const response = await fetch(
-      `https://www.bizportal.co.il/capitalmarket/quote/generalview/${paperId}`,
-      {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html',
-        }
+function bizportalGet(path) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'www.bizportal.co.il', path, method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html',
+        'Accept-Encoding': 'identity',
+      },
+      rejectUnauthorized: false,
+      timeout: 10000,
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        resolve(bizportalGet(new URL(res.headers.location).pathname));
+        return;
       }
-    );
-    clearTimeout(timeout);
-    if (!response.ok) return null;
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve({ status: res.statusCode, body: data }));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    req.end();
+  });
+}
 
-    const html = await response.text();
+async function fetchBizportal(paperId) {
+  const { status, body } = await bizportalGet(`/capitalmarket/quote/generalview/${paperId}`);
+  if (status !== 200 || body.length === 0) return null;
 
-    // All class="num" values on the page, in order
-    const nums = [...html.matchAll(/class="num"[^>]*>([\d,.]+)/g)].map(m =>
-      parseFloat(m[1].replace(/,/g, ''))
-    );
-    if (nums.length === 0) return null;
+  const nums = [...body.matchAll(/class="num"[^>]*>([\d,.]+)/g)].map(m =>
+    parseFloat(m[1].replace(/,/g, ''))
+  );
+  if (nums.length === 0) return null;
 
-    const currentRate = nums[0];
+  const currentRate = nums[0];
 
-    // Base rate sits right after the label "שער בסיס"
-    let baseRate = null;
-    const baseMatch = html.match(/שער בסיס[\s\S]*?class="num"[^>]*>([\d,.]+)/);
-    if (baseMatch) baseRate = parseFloat(baseMatch[1].replace(/,/g, ''));
+  let baseRate = null;
+  const baseMatch = body.match(/שער בסיס[\s\S]*?class="num"[^>]*>([\d,.]+)/);
+  if (baseMatch) baseRate = parseFloat(baseMatch[1].replace(/,/g, ''));
 
-    if (currentRate > 0) {
-      return {
-        currentPrice: currentRate / 100,
-        prevClose: baseRate ? baseRate / 100 : null,
-      };
-    }
-    return null;
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
+  if (currentRate > 0) {
+    return {
+      currentPrice: currentRate / 100,
+      prevClose: baseRate ? baseRate / 100 : null,
+    };
   }
+  return null;
 }
 
 async function fetchYahoo(ticker) {
