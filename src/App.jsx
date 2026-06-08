@@ -302,6 +302,11 @@ const App = () => {
 
     setIsRefreshingPrices(false);
 
+    if (cacheUpdated) {
+      newMarketData._lastUpdated = new Date().toISOString();
+      setMarketData({ ...newMarketData });
+    }
+
     if (cacheUpdated && user) {
       try {
         await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'), newMarketData);
@@ -1275,6 +1280,13 @@ const App = () => {
                   );
                 })}
               </div>
+            )}
+
+            {/* Last updated timestamp */}
+            {marketData._lastUpdated && (
+              <p className="text-center text-[10px] pb-1" style={{color:'#334155'}}>
+                עודכן לאחרונה: {new Date(marketData._lastUpdated).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+              </p>
             )}
           </div>
         )}
