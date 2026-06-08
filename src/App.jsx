@@ -1285,7 +1285,7 @@ const App = () => {
             {/* Last updated timestamp */}
             {marketData._lastUpdated && (
               <p className="text-center text-[10px] pb-1" style={{color:'#334155'}}>
-                עודכן לאחרונה: {new Date(marketData._lastUpdated).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                עודכן לאחרונה: {new Date(marketData._lastUpdated).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' })} {new Date(marketData._lastUpdated).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
               </p>
             )}
           </div>
