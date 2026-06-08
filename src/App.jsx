@@ -223,10 +223,8 @@ const App = () => {
     const needsServerFetch = [];
 
     uniqueHoldings.forEach(h => {
-      const ticker = h.symbol.trim().toUpperCase();
-      // Skip if manual override set for numeric ILS
-      if (isNumericILS(h) && newMarketData[ticker]?.manualOverride) return;
-
+      // Always attempt a fresh fetch. For numeric ILS funds the manual price
+      // (if any) is kept as a fallback — failed fetches don't overwrite cache.
       if (h.currency === 'USD' && settings.finnhubKey) {
         usdWithFinnhub.push(h);
       } else {
