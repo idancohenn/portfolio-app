@@ -200,6 +200,7 @@ const App = () => {
     setIsRefreshingPrices(true);
     const newMarketData = { ...marketData };
     let cacheUpdated = false;
+    let pricesChanged = false;
 
     // Fetch with abort timeout
     const fetchWithTimeout = async (url, timeout = 8000, options = {}) => {
@@ -242,6 +243,7 @@ const App = () => {
           const data = await res.json();
           if (data?.c > 0) {
             const dailyChangePct = data.pc > 0 ? ((data.c - data.pc) / data.pc) * 100 : 0;
+            if (newMarketData[ticker]?.currentPrice !== data.c) pricesChanged = true;
             newMarketData[ticker] = { currentPrice: data.c, dailyChangePct, manualOverride: false };
             cacheUpdated = true;
             setMarketData({ ...newMarketData });
@@ -282,6 +284,7 @@ const App = () => {
                   return t === result.symbol || `${t}.TA` === result.symbol || result.symbol === t.replace('.TA', '');
                 })?.symbol.trim().toUpperCase() || result.symbol;
 
+                if (newMarketData[originalTicker]?.currentPrice !== result.currentPrice) pricesChanged = true;
                 newMarketData[originalTicker] = {
                   currentPrice: result.currentPrice,
                   dailyChangePct: result.dailyChangePct,
@@ -302,7 +305,7 @@ const App = () => {
 
     setIsRefreshingPrices(false);
 
-    if (cacheUpdated) {
+    if (pricesChanged) {
       newMarketData._lastUpdated = new Date().toISOString();
       setMarketData({ ...newMarketData });
     }
@@ -1196,6 +1199,8 @@ const App = () => {
                   const isExpanded = expandedHoldingId === h.id;
                   const totalColor = totalChangePct === 0 ? '#94a3b8' : isProfit ? '#22c55e' : '#ef4444';
                   const dailyColor = dailyChangePct === 0 ? '#94a3b8' : isDailyProfit ? '#22c55e' : '#ef4444';
+                  const dayOfWeek = new Date().getDay();
+                  const isMarketClosed = dayOfWeek === 0 || dayOfWeek === 6;
 
                   return (
                     <div key={h.id}
@@ -1222,8 +1227,8 @@ const App = () => {
                           <div className="w-px h-7" style={{background:'#1e293b'}} />
                           <div className="flex flex-col items-center" style={{minWidth:'44px'}}>
                             <span className="text-[8px] uppercase tracking-wider mb-1" style={{color:'#64748b', fontWeight:400}}>יומי</span>
-                            <span className="text-[11px] leading-none" style={{fontWeight:500, color: dailyColor, direction:'ltr'}}>{dailyChangePct === 0 ? '0.00%' : `${isDailyProfit ? '+' : '−'}${Math.abs(dailyChangePct).toFixed(2)}%`}</span>
-                            <span className="text-[8px] mt-0.5" style={{color: dailyColor, fontWeight:400, direction:'ltr'}}>{dailyChangePct === 0 ? '₪0' : `${isDailyProfit ? '+' : '−'}₪${Math.abs(dailyChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</span>
+                            <span className="text-[11px] leading-none" style={{fontWeight:500, color: isMarketClosed ? '#334155' : dailyColor, direction:'ltr'}}>{isMarketClosed ? '—' : dailyChangePct === 0 ? '0.00%' : `${isDailyProfit ? '+' : '−'}${Math.abs(dailyChangePct).toFixed(2)}%`}</span>
+                            <span className="text-[8px] mt-0.5" style={{color: isMarketClosed ? '#334155' : dailyColor, fontWeight:400, direction:'ltr'}}>{isMarketClosed ? '' : dailyChangePct === 0 ? '₪0' : `${isDailyProfit ? '+' : '−'}₪${Math.abs(dailyChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</span>
                           </div>
                           <div className="w-px h-7" style={{background:'#1e293b'}} />
                           <div className="flex flex-col items-center" style={{minWidth:'44px'}}>

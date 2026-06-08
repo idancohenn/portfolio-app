@@ -34,33 +34,23 @@ async function fetchTickerPrice(ticker) {
   let prevClose = null;
   let source = null;
 
-  // For numeric ILS (Israeli ETFs/funds), try Bizportal first
-  if (isILS && isNumeric) {
-    try {
-      const bizportalData = await fetchBizportal(cleanTicker);
-      if (bizportalData) {
-        currentPrice = bizportalData.currentPrice;
-        prevClose = bizportalData.prevClose;
-        source = 'bizportal';
-      }
-    } catch (e) {
-      console.error(`Bizportal failed for ${ticker}:`, e.message);
-    }
+  // Numeric Israeli funds (7-digit codes) are not supported by Yahoo Finance.
+  // They require manual price entry in the app.
+  if (isNumeric) {
+    return { symbol: ticker, success: false, error: 'Numeric Israeli funds require manual price entry' };
   }
 
-  // Fallback to Yahoo Finance for all stocks
-  if (currentPrice === null) {
-    try {
-      const yahooTicker = isILS && !ticker.includes('.') ? `${ticker}.TA` : ticker;
-      const yahooData = await fetchYahoo(yahooTicker, isNumeric);
-      if (yahooData) {
-        currentPrice = yahooData.currentPrice;
-        prevClose = yahooData.prevClose;
-        source = 'yahoo';
-      }
-    } catch (e) {
-      console.error(`Yahoo failed for ${ticker}:`, e.message);
+  // Fetch via Yahoo Finance
+  try {
+    const yahooTicker = isILS && !ticker.includes('.') ? `${ticker}.TA` : ticker;
+    const yahooData = await fetchYahoo(yahooTicker);
+    if (yahooData) {
+      currentPrice = yahooData.currentPrice;
+      prevClose = yahooData.prevClose;
+      source = 'yahoo';
     }
+  } catch (e) {
+    console.error(`Yahoo failed for ${ticker}:`, e.message);
   }
 
   if (currentPrice !== null && !isNaN(currentPrice) && currentPrice > 0) {
@@ -85,43 +75,7 @@ async function fetchTickerPrice(ticker) {
   };
 }
 
-async function fetchBizportal(paperId) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const response = await fetch(
-      `https://gw.bizportal.co.il/api/quote/paper/${paperId}`,
-      {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'application/json, text/plain, */*',
-          'Referer': 'https://www.bizportal.co.il',
-          'Origin': 'https://www.bizportal.co.il',
-        }
-      }
-    );
-    clearTimeout(timeout);
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    
-    if (data?.lastRate > 0) {
-      return {
-        currentPrice: parseFloat(data.lastRate) / 100,
-        prevClose: parseFloat(data.baseRate) / 100
-      };
-    }
-    return null;
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
-  }
-}
-
-async function fetchYahoo(ticker, isNumericILS = false) {
+async function fetchYahoo(ticker) {
   const YAHOO_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
@@ -150,8 +104,8 @@ async function fetchYahoo(ticker, isNumericILS = false) {
 
       if (result?.meta) {
         const meta = result.meta;
-        // Numeric ILS symbols on Yahoo come in agorot, divide by 100
-        const divisor = isNumericILS ? 100 : 1;
+        // Yahoo returns ILA (Israeli Agora) for all TASE stocks — divide by 100 to get ILS
+        const divisor = meta.currency === 'ILA' ? 100 : 1;
         return {
           currentPrice: meta.regularMarketPrice / divisor,
           prevClose: meta.chartPreviousClose / divisor
