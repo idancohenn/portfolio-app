@@ -1694,14 +1694,14 @@ const App = () => {
       {/* Settings Modal */}
       {isSettingsOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-[32px] p-6 shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center mb-6">
+          <div className="bg-white w-full max-w-sm rounded-[32px] p-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col">
+            <div className="flex justify-between items-center mb-6 flex-shrink-0">
               <h3 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
                 <Settings size={24} className="text-blue-500" /> הגדרות API
               </h3>
               <button onClick={() => setIsSettingsOpen(false)} className="p-2 bg-slate-100 rounded-full text-slate-500 active:scale-90"><X size={20} /></button>
             </div>
-            <form onSubmit={handleSaveSettings} className="space-y-5 pb-2">
+            <form onSubmit={handleSaveSettings} className="space-y-5 pb-2 overflow-y-auto flex-1">
               <div>
                 <label className="text-[12px] font-bold text-slate-800 uppercase tracking-wider mb-2 block text-blue-600">
                   מפתח למניות ארה״ב (Finnhub) 🇺🇸
