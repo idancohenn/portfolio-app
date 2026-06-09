@@ -1098,31 +1098,31 @@ const App = () => {
       <AlertNotifications />
 
       <header className="px-5 py-4 pt-safe flex items-center justify-between sticky top-0 z-20" style={{background:'#0d1117', borderBottom:'0.5px solid #1e293b'}}>
-        {/* Left side: +, Settings, Refresh */}
-        <div className="flex items-center gap-4">
-          <button onClick={() => { setEditingId(null); setIsAdding(true); }} className="flex items-center justify-center w-8 h-8 rounded-full active:scale-90 transition-transform" style={{background:'#3b82f6', color:'#fff'}}>
-            <Plus size={20} />
-          </button>
-          <button onClick={() => setIsSettingsOpen(true)} className="flex items-center justify-center w-8 h-8 rounded-full transition-colors" style={{background:'#1e293b', color:'#94a3b8'}}>
-            <Settings size={15} />
-          </button>
-          <button onClick={fetchMarketPrices} disabled={isRefreshingPrices} className="flex items-center justify-center w-8 h-8 rounded-full transition-colors disabled:opacity-50" style={{background:'#1e293b', color:'#94a3b8'}}>
-            <RefreshCcw size={15} className={isRefreshingPrices ? 'animate-spin' : ''} />
-          </button>
-        </div>
-        {/* Right side: title + profile */}
+        {/* DOM first = visually RIGHT in RTL: profile + title */}
         <div className="flex items-center gap-3">
-          <div className="text-right">
-            <h1 className="text-xl tracking-tight" style={{fontWeight:700, color:'#f1f5f9', letterSpacing:'-0.4px'}}>MyWealth</h1>
-            <p className="text-[9px] flex items-center justify-end gap-1 mt-0.5" style={{color:'#64748b', fontWeight:400}}>
-              <ArrowRightLeft size={9} /> שער דולר רציף: ₪{usdRate.toFixed(3)}
-            </p>
-          </div>
           <button onClick={() => setIsProfileMenuOpen(true)} className="flex-shrink-0 rounded-full overflow-hidden transition-opacity hover:opacity-80 active:opacity-60" style={{width:34, height:34, border:'2px solid #1e293b'}}>
             {user?.photoURL
               ? <img src={user.photoURL} alt="פרופיל" className="w-full h-full object-cover" />
               : <div className="w-full h-full flex items-center justify-center" style={{background:'#1e293b', color:'#94a3b8'}}><LogOut size={15} /></div>
             }
+          </button>
+          <div>
+            <h1 className="text-xl tracking-tight" style={{fontWeight:700, color:'#f1f5f9', letterSpacing:'-0.4px'}}>MyWealth</h1>
+            <p className="text-[9px] flex items-center gap-1 mt-0.5" style={{color:'#64748b', fontWeight:400}}>
+              <ArrowRightLeft size={9} /> שער דולר רציף: ₪{usdRate.toFixed(3)}
+            </p>
+          </div>
+        </div>
+        {/* DOM second = visually LEFT in RTL: Refresh, Settings, + */}
+        <div className="flex items-center gap-4">
+          <button onClick={fetchMarketPrices} disabled={isRefreshingPrices} className="flex items-center justify-center w-8 h-8 rounded-full transition-colors disabled:opacity-50" style={{background:'#1e293b', color:'#94a3b8'}}>
+            <RefreshCcw size={15} className={isRefreshingPrices ? 'animate-spin' : ''} />
+          </button>
+          <button onClick={() => setIsSettingsOpen(true)} className="flex items-center justify-center w-8 h-8 rounded-full transition-colors" style={{background:'#1e293b', color:'#94a3b8'}}>
+            <Settings size={15} />
+          </button>
+          <button onClick={() => { setEditingId(null); setIsAdding(true); }} className="flex items-center justify-center w-8 h-8 rounded-full active:scale-90 transition-transform" style={{background:'#3b82f6', color:'#fff'}}>
+            <Plus size={20} />
           </button>
         </div>
       </header>
