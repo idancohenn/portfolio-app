@@ -131,7 +131,21 @@ const App = () => {
       try {
         const cacheSnap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'));
         if (cacheSnap.exists()) {
-          setMarketData(prev => Object.keys(prev).length === 0 ? cacheSnap.data() : prev);
+          const data = cacheSnap.data();
+          const today = new Date().toDateString();
+          const cacheDate = data._lastUpdated ? new Date(data._lastUpdated).toDateString() : null;
+          // New day — reset all daily changes so morning doesn't show yesterday's changes
+          if (cacheDate !== today) {
+            const reset = { ...data };
+            Object.keys(reset).forEach(k => {
+              if (reset[k] && typeof reset[k] === 'object' && 'dailyChangePct' in reset[k]) {
+                reset[k] = { ...reset[k], dailyChangePct: 0 };
+              }
+            });
+            setMarketData(prev => Object.keys(prev).length === 0 ? reset : prev);
+          } else {
+            setMarketData(prev => Object.keys(prev).length === 0 ? data : prev);
+          }
         }
       } catch (e) {}
     };
