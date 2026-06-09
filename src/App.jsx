@@ -133,19 +133,17 @@ const App = () => {
         if (cacheSnap.exists()) {
           const data = cacheSnap.data();
           const today = new Date().toDateString();
-          const cacheDate = data._lastUpdated ? new Date(data._lastUpdated).toDateString() : null;
-          // New day — reset all daily changes so morning doesn't show yesterday's changes
-          if (cacheDate !== today) {
-            const reset = { ...data };
-            Object.keys(reset).forEach(k => {
-              if (reset[k] && typeof reset[k] === 'object' && 'dailyChangePct' in reset[k]) {
-                reset[k] = { ...reset[k], dailyChangePct: 0 };
+          // Reset dailyChangePct per-stock based on when that stock was last fetched
+          const reset = { ...data };
+          Object.keys(reset).forEach(k => {
+            const entry = reset[k];
+            if (entry && typeof entry === 'object' && 'dailyChangePct' in entry) {
+              if (entry._fetchedAt !== today) {
+                reset[k] = { ...entry, dailyChangePct: 0 };
               }
-            });
-            setMarketData(prev => Object.keys(prev).length === 0 ? reset : prev);
-          } else {
-            setMarketData(prev => Object.keys(prev).length === 0 ? data : prev);
-          }
+            }
+          });
+          setMarketData(prev => Object.keys(prev).length === 0 ? reset : prev);
         }
       } catch (e) {}
     };
@@ -256,7 +254,7 @@ const App = () => {
           if (data?.c > 0) {
             const dailyChangePct = data.pc > 0 ? ((data.c - data.pc) / data.pc) * 100 : 0;
             if (newMarketData[ticker]?.currentPrice !== data.c) pricesChanged = true;
-            newMarketData[ticker] = { currentPrice: data.c, dailyChangePct, manualOverride: false };
+            newMarketData[ticker] = { currentPrice: data.c, dailyChangePct, manualOverride: false, _fetchedAt: new Date().toDateString() };
             cacheUpdated = true;
             setMarketData({ ...newMarketData });
             return;
@@ -300,7 +298,8 @@ const App = () => {
                 newMarketData[originalTicker] = {
                   currentPrice: result.currentPrice,
                   dailyChangePct: result.dailyChangePct,
-                  manualOverride: false
+                  manualOverride: false,
+                  _fetchedAt: new Date().toDateString()
                 };
                 cacheUpdated = true;
               } else {
