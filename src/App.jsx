@@ -32,6 +32,7 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
   // Settings State (API Keys + Auto-refresh + Telegram)
   const [settings, setSettings] = useState({
@@ -1097,7 +1098,11 @@ const App = () => {
       <AlertNotifications />
 
       <header className="px-5 py-4 pt-safe flex items-center justify-between sticky top-0 z-20" style={{background:'#0d1117', borderBottom:'0.5px solid #1e293b'}}>
-        <div className="flex items-center gap-2">
+        {/* Left side: +, Settings, Refresh */}
+        <div className="flex items-center gap-4">
+          <button onClick={() => { setEditingId(null); setIsAdding(true); }} className="flex items-center justify-center w-8 h-8 rounded-full active:scale-90 transition-transform" style={{background:'#3b82f6', color:'#fff'}}>
+            <Plus size={20} />
+          </button>
           <button onClick={() => setIsSettingsOpen(true)} className="flex items-center justify-center w-8 h-8 rounded-full transition-colors" style={{background:'#1e293b', color:'#94a3b8'}}>
             <Settings size={15} />
           </button>
@@ -1105,6 +1110,7 @@ const App = () => {
             <RefreshCcw size={15} className={isRefreshingPrices ? 'animate-spin' : ''} />
           </button>
         </div>
+        {/* Right side: title + profile */}
         <div className="flex items-center gap-3">
           <div className="text-right">
             <h1 className="text-xl tracking-tight" style={{fontWeight:700, color:'#f1f5f9', letterSpacing:'-0.4px'}}>MyWealth</h1>
@@ -1112,17 +1118,33 @@ const App = () => {
               <ArrowRightLeft size={9} /> שער דולר רציף: ₪{usdRate.toFixed(3)}
             </p>
           </div>
-          <button onClick={handleLogout} title="התנתק" className="flex-shrink-0 rounded-full overflow-hidden transition-opacity hover:opacity-80 active:opacity-60" style={{width:34, height:34, border:'2px solid #1e293b'}}>
+          <button onClick={() => setIsProfileMenuOpen(true)} className="flex-shrink-0 rounded-full overflow-hidden transition-opacity hover:opacity-80 active:opacity-60" style={{width:34, height:34, border:'2px solid #1e293b'}}>
             {user?.photoURL
               ? <img src={user.photoURL} alt="פרופיל" className="w-full h-full object-cover" />
               : <div className="w-full h-full flex items-center justify-center" style={{background:'#1e293b', color:'#94a3b8'}}><LogOut size={15} /></div>
             }
           </button>
-          <button onClick={() => { setEditingId(null); setIsAdding(true); }} className="flex items-center justify-center w-8 h-8 rounded-full active:scale-90 transition-transform" style={{background:'#3b82f6', color:'#fff'}}>
-            <Plus size={20} />
-          </button>
         </div>
       </header>
+
+      {/* Profile menu modal */}
+      {isProfileMenuOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center pb-8 px-4" style={{background:'rgba(0,0,0,0.6)'}} onClick={() => setIsProfileMenuOpen(false)}>
+          <div className="w-full max-w-sm rounded-2xl p-5 flex flex-col items-center gap-4" style={{background:'#1e293b'}} onClick={e => e.stopPropagation()}>
+            {user?.photoURL && <img src={user.photoURL} alt="פרופיל" className="w-16 h-16 rounded-full" />}
+            <div className="text-center">
+              <p className="font-semibold" style={{color:'#f1f5f9'}}>{user?.displayName}</p>
+              <p className="text-sm mt-0.5" style={{color:'#64748b'}}>{user?.email}</p>
+            </div>
+            <button onClick={() => { setIsProfileMenuOpen(false); handleLogout(); }} className="w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2" style={{background:'#0f172a', color:'#ef4444'}}>
+              <LogOut size={16} /> התנתק
+            </button>
+            <button onClick={() => setIsProfileMenuOpen(false)} className="w-full py-2.5 rounded-xl text-sm" style={{color:'#64748b'}}>
+              ביטול
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="px-4 py-4 max-w-md mx-auto">
 
