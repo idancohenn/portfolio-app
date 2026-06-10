@@ -91,6 +91,16 @@ const App = () => {
   // Helper: is this a numeric ILS stock?
   const isNumericILS = (h) => h.currency === 'ILS' && /^\d+$/.test(h.symbol.trim().replace('.TA', ''));
 
+  // Helper: daily-change display state based on the last actual trade time.
+  // 'weekend' → show "—" | 'closed' → regular day, market closed → show 0% | 'live' → show real change
+  const dailyChangeState = (mData) => {
+    const day = new Date().getDay();
+    if (day === 0 || day === 6) return 'weekend'; // Sat / Sun
+    const mt = mData?._marketTime;
+    const tradedToday = mt && new Date(mt).toDateString() === new Date().toDateString();
+    return tradedToday ? 'live' : 'closed';
+  };
+
   // 1. Init & Fetch Exchange Rate
   useEffect(() => {
     const initApp = async () => {
@@ -132,19 +142,7 @@ const App = () => {
       try {
         const cacheSnap = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cache', 'marketData'));
         if (cacheSnap.exists()) {
-          const data = cacheSnap.data();
-          const today = new Date().toDateString();
-          // Reset dailyChangePct per-stock based on when that stock was last fetched
-          const reset = { ...data };
-          Object.keys(reset).forEach(k => {
-            const entry = reset[k];
-            if (entry && typeof entry === 'object' && 'dailyChangePct' in entry) {
-              if (entry._fetchedAt !== today) {
-                reset[k] = { ...entry, dailyChangePct: 0 };
-              }
-            }
-          });
-          setMarketData(prev => Object.keys(prev).length === 0 ? reset : prev);
+          setMarketData(prev => Object.keys(prev).length === 0 ? cacheSnap.data() : prev);
         }
       } catch (e) {}
     };
@@ -255,7 +253,7 @@ const App = () => {
           if (data?.c > 0) {
             const dailyChangePct = data.pc > 0 ? ((data.c - data.pc) / data.pc) * 100 : 0;
             if (newMarketData[ticker]?.currentPrice !== data.c) pricesChanged = true;
-            newMarketData[ticker] = { currentPrice: data.c, dailyChangePct, manualOverride: false, _fetchedAt: new Date().toDateString() };
+            newMarketData[ticker] = { currentPrice: data.c, dailyChangePct, manualOverride: false, _marketTime: data.t ? data.t * 1000 : null };
             cacheUpdated = true;
             setMarketData({ ...newMarketData });
             return;
@@ -300,7 +298,7 @@ const App = () => {
                   currentPrice: result.currentPrice,
                   dailyChangePct: result.dailyChangePct,
                   manualOverride: false,
-                  _fetchedAt: new Date().toDateString()
+                  _marketTime: result.marketTime ?? null
                 };
                 cacheUpdated = true;
               } else {
@@ -541,7 +539,7 @@ const App = () => {
     const price = parseFloat(priceStr);
     if (isNaN(price) || price <= 0) return;
     const ticker = holding.symbol.trim().toUpperCase();
-    const updated = { ...marketData, [ticker]: { currentPrice: price, dailyChangePct: marketData[ticker]?.dailyChangePct || 0, manualOverride: true } };
+    const updated = { ...marketData, [ticker]: { currentPrice: price, dailyChangePct: marketData[ticker]?.dailyChangePct || 0, manualOverride: true, _marketTime: Date.now() } };
     setMarketData(updated);
     if (user) {
       try {
@@ -568,7 +566,9 @@ const App = () => {
       if (isILS) localILS += currentILS; else foreignILS += currentILS;
       const sectorName = (h.sector || 'אחר').trim();
       sectorMap[sectorName] = (sectorMap[sectorName] || 0) + currentILS;
-      const dailyChangeRatio = mData.dailyChangePct / 100;
+      // Only count today's change if the stock actually traded today
+      const effectiveDailyPct = dailyChangeState(mData) === 'live' ? mData.dailyChangePct : 0;
+      const dailyChangeRatio = effectiveDailyPct / 100;
       const prevDayValueILS = currentILS / (1 + dailyChangeRatio);
       dailyChangeILS += (currentILS - prevDayValueILS);
     });
@@ -1237,8 +1237,7 @@ const App = () => {
                   const isExpanded = expandedHoldingId === h.id;
                   const totalColor = totalChangePct === 0 ? '#94a3b8' : isProfit ? '#22c55e' : '#ef4444';
                   const dailyColor = dailyChangePct === 0 ? '#94a3b8' : isDailyProfit ? '#22c55e' : '#ef4444';
-                  const dayOfWeek = new Date().getDay();
-                  const isMarketClosed = dayOfWeek === 0 || dayOfWeek === 6;
+                  const dailyState = dailyChangeState(mData); // 'weekend' | 'closed' | 'live'
 
                   return (
                     <div key={h.id}
@@ -1265,8 +1264,8 @@ const App = () => {
                           <div className="w-px h-7" style={{background:'#1e293b'}} />
                           <div className="flex flex-col items-center" style={{minWidth:'44px'}}>
                             <span className="text-[8px] uppercase tracking-wider mb-1" style={{color:'#64748b', fontWeight:400}}>יומי</span>
-                            <span className="text-[11px] leading-none" style={{fontWeight:500, color: isMarketClosed ? '#334155' : dailyColor, direction:'ltr'}}>{isMarketClosed ? '—' : dailyChangePct === 0 ? '0.00%' : `${isDailyProfit ? '+' : '−'}${Math.abs(dailyChangePct).toFixed(2)}%`}</span>
-                            <span className="text-[8px] mt-0.5" style={{color: isMarketClosed ? '#334155' : dailyColor, fontWeight:400, direction:'ltr'}}>{isMarketClosed ? '' : dailyChangePct === 0 ? '₪0' : `${isDailyProfit ? '+' : '−'}₪${Math.abs(dailyChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</span>
+                            <span className="text-[11px] leading-none" style={{fontWeight:500, color: dailyState === 'weekend' ? '#334155' : dailyState === 'closed' ? '#94a3b8' : dailyColor, direction:'ltr'}}>{dailyState === 'weekend' ? '—' : dailyState === 'closed' ? '0.00%' : dailyChangePct === 0 ? '0.00%' : `${isDailyProfit ? '+' : '−'}${Math.abs(dailyChangePct).toFixed(2)}%`}</span>
+                            <span className="text-[8px] mt-0.5" style={{color: dailyState === 'weekend' ? '#334155' : dailyState === 'closed' ? '#94a3b8' : dailyColor, fontWeight:400, direction:'ltr'}}>{dailyState === 'weekend' ? '' : dailyState === 'closed' ? '₪0' : dailyChangePct === 0 ? '₪0' : `${isDailyProfit ? '+' : '−'}₪${Math.abs(dailyChangeAmtILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</span>
                           </div>
                           <div className="w-px h-7" style={{background:'#1e293b'}} />
                           <div className="flex flex-col items-center" style={{minWidth:'44px'}}>

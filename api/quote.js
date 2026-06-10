@@ -35,6 +35,7 @@ async function fetchTickerPrice(ticker) {
   let currentPrice = null;
   let prevClose = null;
   let source = null;
+  let marketTime = null; // ms timestamp of the last actual trade/quote
 
   // Numeric Israeli funds — scrape Bizportal page
   if (isNumeric) {
@@ -43,6 +44,7 @@ async function fetchTickerPrice(ticker) {
       if (bizData) {
         currentPrice = bizData.currentPrice;
         prevClose = bizData.prevClose;
+        marketTime = bizData.marketTime;
         source = 'bizportal';
       }
     } catch (e) {
@@ -58,6 +60,7 @@ async function fetchTickerPrice(ticker) {
       if (yahooData) {
         currentPrice = yahooData.currentPrice;
         prevClose = yahooData.prevClose;
+        marketTime = yahooData.marketTime;
         source = 'yahoo';
       }
     } catch (e) {
@@ -75,6 +78,7 @@ async function fetchTickerPrice(ticker) {
       currentPrice,
       prevClose,
       dailyChangePct,
+      marketTime,
       source,
       success: true
     };
@@ -128,10 +132,20 @@ async function fetchBizportal(paperId) {
   const baseMatch = body.match(/שער בסיס[\s\S]*?class="num"[^>]*>([\d,.]+)/);
   if (baseMatch) baseRate = parseFloat(baseMatch[1].replace(/,/g, ''));
 
+  // Last trade date — e.g. <div id="last-deal-time">נכון ל: 10/06/2026 </div>
+  let marketTime = null;
+  const dateMatch = body.match(/last-deal-time[^>]*>[^\d]*(\d{2})\/(\d{2})\/(\d{4})/);
+  if (dateMatch) {
+    const [, dd, mm, yyyy] = dateMatch;
+    // Noon UTC avoids any midnight rollover when compared in Israel local time
+    marketTime = Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd), 12, 0, 0);
+  }
+
   if (currentRate > 0) {
     return {
       currentPrice: currentRate / 100,
       prevClose: baseRate ? baseRate / 100 : null,
+      marketTime,
     };
   }
   return null;
@@ -170,7 +184,8 @@ async function fetchYahoo(ticker) {
         const divisor = meta.currency === 'ILA' ? 100 : 1;
         return {
           currentPrice: meta.regularMarketPrice / divisor,
-          prevClose: meta.chartPreviousClose / divisor
+          prevClose: meta.chartPreviousClose / divisor,
+          marketTime: meta.regularMarketTime ? meta.regularMarketTime * 1000 : null,
         };
       }
     } catch (e) {
