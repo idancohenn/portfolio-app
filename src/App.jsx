@@ -92,13 +92,20 @@ const App = () => {
   const isNumericILS = (h) => h.currency === 'ILS' && /^\d+$/.test(h.symbol.trim().replace('.TA', ''));
 
   // Helper: daily-change display state based on the last actual trade time.
+  // Daily changes "reset" each day at 09:30 (local Israel time): a trade counts as
+  // current only if it happened after the most recent 09:30 boundary. This keeps
+  // last session's change visible overnight, and zeroes it out at 09:30.
   // 'weekend' → show "—" | 'closed' → regular day, market closed → show 0% | 'live' → show real change
   const dailyChangeState = (mData) => {
-    const day = new Date().getDay();
+    const now = new Date();
+    const day = now.getDay();
     if (day === 0 || day === 6) return 'weekend'; // Sat / Sun
+    const reset = new Date(now);
+    reset.setHours(9, 30, 0, 0);
+    if (now < reset) reset.setDate(reset.getDate() - 1); // before 09:30 → use yesterday's boundary
     const mt = mData?._marketTime;
-    const tradedToday = mt && new Date(mt).toDateString() === new Date().toDateString();
-    return tradedToday ? 'live' : 'closed';
+    const tradedSinceReset = mt && new Date(mt) >= reset;
+    return tradedSinceReset ? 'live' : 'closed';
   };
 
   // 1. Init & Fetch Exchange Rate
