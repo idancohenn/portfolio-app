@@ -128,8 +128,11 @@ async function fetchBizportal(paperId) {
 
   const currentRate = nums[0];
 
+  // Previous close is the "שער בסיס" value in the <dt>/<dd> data list:
+  //   <dt>שער בסיס</dt><dd>236,610</dd>
+  // (NOT the next class="num", which is an unrelated figure elsewhere on the page.)
   let baseRate = null;
-  const baseMatch = body.match(/שער בסיס[\s\S]*?class="num"[^>]*>([\d,.]+)/);
+  const baseMatch = body.match(/שער בסיס<\/dt>\s*<dd>([\d,.]+)/);
   if (baseMatch) baseRate = parseFloat(baseMatch[1].replace(/,/g, ''));
 
   // Last trade date — e.g. <div id="last-deal-time">נכון ל: 10/06/2026 </div>
