@@ -610,7 +610,12 @@ const App = () => {
         case 'value-desc': return valueB_ILS - valueA_ILS;
         case 'value-asc': return valueA_ILS - valueB_ILS;
         case 'profit-desc': return profitB - profitA;
-        case 'daily-desc': return (marketData[b.symbol.trim().toUpperCase()]?.dailyChangePct || 0) - (marketData[a.symbol.trim().toUpperCase()]?.dailyChangePct || 0);
+        case 'daily-desc': {
+          // Sort by the same effective value shown on screen (0 when market closed)
+          const dailyA = dailyChangeState(mDataA) === 'live' ? (mDataA.dailyChangePct || 0) : 0;
+          const dailyB = dailyChangeState(mDataB) === 'live' ? (mDataB.dailyChangePct || 0) : 0;
+          return dailyB - dailyA;
+        }
         case 'sector': return (a.sector || '').localeCompare(b.sector || '');
         case 'platform': return (a.platform || '').localeCompare(b.platform || '');
         default: return 0;
