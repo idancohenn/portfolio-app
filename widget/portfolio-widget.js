@@ -246,7 +246,7 @@ function addFooter(widget, data, stale) {
     ];
 
   addText(widget, parts.filter(Boolean).join('  ·  '), {
-    align: 'right', font: Font.systemFont(8), color: COLORS.muted, scale: 0.7,
+    align: 'left', font: Font.systemFont(8), color: COLORS.muted, scale: 0.7,
   });
 }
 

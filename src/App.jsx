@@ -1183,7 +1183,7 @@ const App = () => {
                   </p>
                 </div>
                 <div className="flex-1 pr-4" style={{borderRight:'0.5px solid #1e293b'}}>
-                  <p className="text-[9px] uppercase tracking-wider mb-1.5" style={{color:'#94a3b8', fontWeight:400}}>שינוי יומי</p>
+                  <p className="text-[9px] uppercase tracking-wider mb-1.5" style={{color:'#94a3b8', fontWeight:400}}>תשואה יומית</p>
                   <p className="text-[14px] mb-0.5" style={{fontWeight:600, letterSpacing:'-0.3px', color: stats.dailyChangePct >= 0 ? '#22c55e' : '#ef4444', direction:'ltr', textAlign:'right'}}>
                     {stats.dailyChangePct >= 0 ? '+' : '−'}₪{Math.abs(stats.dailyChangeILS).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </p>
