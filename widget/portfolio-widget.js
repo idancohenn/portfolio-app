@@ -125,40 +125,60 @@ function readCache() {
 
 // --- rendering -------------------------------------------------------------
 
+// Hebrew labels sit on the right, figures on the left, and each KPI gets its own
+// two lines — on a small widget a label and its figure can't share one line
+// without the figure being truncated.
 function buildHomeWidget(data, stale) {
+  const small = family === 'small';
   const widget = new ListWidget();
   widget.backgroundColor = COLORS.bg;
-  widget.setPadding(14, 14, 14, 14);
+  widget.setPadding(12, 12, 10, 12);
 
-  addLabel(widget, 'שווי תיק נוכחי');
+  addText(widget, 'שווי תיק נוכחי', {
+    align: 'right', font: Font.systemFont(9), color: COLORS.label,
+  });
+  addText(widget, shekels(data.totalILS), {
+    align: 'center', font: Font.boldSystemFont(small ? 19 : 26), color: COLORS.value, scale: 0.5,
+  });
+  addText(widget, `$${round(data.totalUSD)}`, {
+    align: 'center', font: Font.systemFont(10), color: COLORS.muted, scale: 0.7,
+  });
 
-  const total = widget.addText(shekels(data.totalILS));
-  total.font = Font.boldSystemFont(family === 'small' ? 22 : 26);
-  total.textColor = COLORS.value;
-  total.minimumScaleFactor = 0.6;
-  total.lineLimit = 1;
+  widget.addSpacer(small ? 5 : 10);
+  addKpi(widget, 'שינוי יומי', data.dailyChangeILS, data.dailyChangePct);
+  widget.addSpacer(small ? 3 : 8);
+  addKpi(widget, 'תשואה כוללת', data.totalChangeILS, data.totalChangePct);
+  widget.addSpacer(small ? 5 : 10);
 
-  const usd = widget.addText(`$${round(data.totalUSD)}`);
-  usd.font = Font.systemFont(10);
-  usd.textColor = COLORS.muted;
-
-  widget.addSpacer(family === 'small' ? 6 : 10);
-
-  if (family === 'small') {
-    addKpiRow(widget, 'שינוי יומי', data.dailyChangeILS, data.dailyChangePct);
-    widget.addSpacer(4);
-    addKpiRow(widget, 'תשואה כוללת', data.totalChangeILS, data.totalChangePct);
-  } else {
-    const row = widget.addStack();
-    row.layoutHorizontally();
-    addKpiColumn(row, 'שינוי יומי', data.dailyChangeILS, data.dailyChangePct);
-    row.addSpacer();
-    addKpiColumn(row, 'תשואה כוללת', data.totalChangeILS, data.totalChangePct);
-  }
-
-  widget.addSpacer(6);
   addFooter(widget, data, stale);
   return widget;
+}
+
+function addKpi(widget, label, amount, percent) {
+  addText(widget, label, { align: 'right', font: Font.systemFont(9), color: COLORS.label });
+  addText(widget, signed(amount, percent), {
+    align: 'left',
+    font: Font.semiboldSystemFont(family === 'small' ? 12 : 15),
+    color: amount >= 0 ? COLORS.up : COLORS.down,
+    scale: 0.6,
+  });
+}
+
+// Alignment via spacers rather than rightAlignText(), so it doesn't depend on how
+// the text element sizes its own frame.
+function addText(container, value, { align, font, color, scale }) {
+  const row = container.addStack();
+  row.layoutHorizontally();
+  if (align !== 'left') row.addSpacer();
+
+  const text = row.addText(value);
+  text.font = font;
+  if (color) text.textColor = color;
+  text.lineLimit = 1;
+  if (scale) text.minimumScaleFactor = scale;
+
+  if (align !== 'right') row.addSpacer();
+  return text;
 }
 
 // Lock-screen rectangular widget: one line of value, one of daily change.
@@ -202,54 +222,21 @@ function buildErrorWidget(error) {
   return widget;
 }
 
-function addLabel(container, text) {
-  const label = container.addText(text);
-  label.font = Font.systemFont(9);
-  label.textColor = COLORS.label;
-}
-
-function addKpiColumn(row, label, amount, percent) {
-  const column = row.addStack();
-  column.layoutVertically();
-  addLabel(column, label);
-
-  const color = amount >= 0 ? COLORS.up : COLORS.down;
-
-  const value = column.addText(shekels(Math.abs(amount), amount >= 0 ? '+' : '−'));
-  value.font = Font.semiboldSystemFont(14);
-  value.textColor = color;
-  value.lineLimit = 1;
-
-  const change = column.addText(pct(percent));
-  change.font = Font.systemFont(10);
-  change.textColor = color;
-}
-
-function addKpiRow(container, label, amount, percent) {
-  const row = container.addStack();
-  row.layoutHorizontally();
-  row.centerAlignContent();
-
-  const name = row.addText(label);
-  name.font = Font.systemFont(9);
-  name.textColor = COLORS.label;
-  row.addSpacer();
-
-  const value = row.addText(`${signed(amount, percent)}`);
-  value.font = Font.semiboldSystemFont(11);
-  value.textColor = amount >= 0 ? COLORS.up : COLORS.down;
-  value.lineLimit = 1;
-}
-
+// Kept terse on the small widget — the spelled-out version doesn't fit its width
+// once both the stale and the missing-price markers are present.
 function addFooter(widget, data, stale) {
-  const parts = [`עודכן ${clock(data.asOf)}`];
-  if (stale) parts.push('↻ מנתונים שמורים');
-  if (data.priceFailures?.length) parts.push(`⚠︎ ${data.priceFailures.length} ללא מחיר`);
+  const failures = data.priceFailures?.length || 0;
+  const parts = family === 'small'
+    ? [clock(data.asOf), stale ? '↻' : '', failures ? `⚠︎${failures}` : '']
+    : [
+      `עודכן ${clock(data.asOf)}`,
+      stale ? '↻ מנתונים שמורים' : '',
+      failures ? `⚠︎ ${failures} ללא מחיר` : '',
+    ];
 
-  const footer = widget.addText(parts.join('  ·  '));
-  footer.font = Font.systemFont(8);
-  footer.textColor = COLORS.muted;
-  footer.lineLimit = 1;
+  addText(widget, parts.filter(Boolean).join('  ·  '), {
+    align: 'right', font: Font.systemFont(8), color: COLORS.muted, scale: 0.7,
+  });
 }
 
 // --- formatting ------------------------------------------------------------
