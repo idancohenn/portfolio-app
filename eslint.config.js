@@ -18,4 +18,22 @@ export default defineConfig([
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
+  {
+    // Vercel serverless functions run on Node
+    files: ['api/**/*.js'],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    // Scriptable (iOS widget) provides its own globals
+    files: ['widget/**/*.js'],
+    languageOptions: {
+      globals: {
+        args: 'readonly', config: 'readonly', console: 'readonly',
+        Alert: 'readonly', Color: 'readonly', DateFormatter: 'readonly',
+        Device: 'readonly', FileManager: 'readonly', Font: 'readonly',
+        Keychain: 'readonly', ListWidget: 'readonly', Request: 'readonly',
+        Script: 'readonly',
+      },
+    },
+  },
 ])
