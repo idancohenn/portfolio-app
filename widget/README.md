@@ -84,15 +84,18 @@ change `WIDGET_TOKEN` in Vercel and re-enter it in Scriptable (step 6).
 4. Home screen → long press → **+** → Scriptable → pick a small or medium widget →
    long press the placed widget → **Edit Widget** → Script: `MyWealth`.
 
-Two things worth knowing:
+In the gallery, swipe between the size previews before tapping **Add Widget** — small,
+medium and the lock-screen Rectangular size all have their own layout. iOS can't resize
+a widget once it's placed, so to change size you remove it and add it again.
+
+Two more things worth knowing:
 
 - Instead of the Keychain you can paste the token into the widget's **Parameter** field.
   That takes precedence, but it's stored in plain text in your home-screen layout.
-- Tapping the widget opens the site in Safari, not the home-screen web app — iOS
-  doesn't route external URLs into an installed PWA.
-
-The same script also works as a lock-screen widget (Rectangular), where it renders a
-compact three-line version.
+- Tapping the widget deliberately does nothing. iOS gives a widget no way to launch an
+  installed home-screen web app — `widget.url` only ever reaches the default browser,
+  which has its own storage and so shows a logged-out, non-standalone copy of the app.
+  Set `TAP_OPENS_SITE = true` in the script if you want the browser anyway.
 
 ## Refresh cadence
 
