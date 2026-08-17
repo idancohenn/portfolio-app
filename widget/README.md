@@ -48,7 +48,7 @@ Redeploy so the new variables and the `firebase-admin` dependency take effect.
 ## 5. Check the endpoint
 
 ```bash
-curl -s "https://YOUR-APP.vercel.app/api/summary?key=YOUR_TOKEN" | jq
+curl -s "https://portfolio-track-app.vercel.app/api/summary?key=YOUR_TOKEN" | jq
 ```
 
 Expected shape:
@@ -77,12 +77,11 @@ change `WIDGET_TOKEN` in Vercel and re-enter it in Scriptable (step 6).
 ## 6. Install the widget
 
 1. Install Scriptable from the App Store.
-2. In [`portfolio-widget.js`](portfolio-widget.js), replace `YOUR-APP.vercel.app` in
-   `ENDPOINT` and `APP_URL` with your real domain.
-3. Scriptable → **+** → paste the whole script → name it `MyWealth`.
-4. Run it once inside Scriptable (▶). It prompts for the token and stores it in the
+2. Scriptable → **+** → paste all of [`portfolio-widget.js`](portfolio-widget.js) →
+   name it `MyWealth`. The endpoint URL is already set; nothing to edit.
+3. Run it once inside Scriptable (▶). It prompts for the token and stores it in the
    device Keychain, then shows a preview of the widget.
-5. Home screen → long press → **+** → Scriptable → pick a small or medium widget →
+4. Home screen → long press → **+** → Scriptable → pick a small or medium widget →
    long press the placed widget → **Edit Widget** → Script: `MyWealth`.
 
 Two things worth knowing:

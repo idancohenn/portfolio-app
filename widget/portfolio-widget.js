@@ -9,13 +9,13 @@
 // return and daily change. Reads /api/summary, so prices are fresh even when
 // the app hasn't been opened.
 //
-// Setup: see widget/README.md. Only ENDPOINT below must be edited — the token
-// is taken from the widget parameter, or from the Keychain after you enter it
-// once by running this script inside Scriptable.
+// Setup: see widget/README.md. Nothing here needs editing — the token is taken
+// from the widget parameter, or from the Keychain after you enter it once by
+// running this script inside Scriptable.
 // ---------------------------------------------------------------------------
 
-const ENDPOINT = 'https://YOUR-APP.vercel.app/api/summary';
-const APP_URL = 'https://YOUR-APP.vercel.app/';
+const ENDPOINT = 'https://portfolio-track-app.vercel.app/api/summary';
+const APP_URL = 'https://portfolio-track-app.vercel.app/';
 
 const KEYCHAIN_KEY = 'myWealthWidgetToken';
 const CACHE_FILE = 'mywealth-summary.json';
