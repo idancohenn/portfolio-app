@@ -10,7 +10,8 @@
 //   PORTFOLIO_UID             — the Firebase Auth uid whose portfolio to report
 //   PORTFOLIO_APP_ID          — optional; defaults to the app's own default appId
 import crypto from 'crypto';
-import admin from 'firebase-admin';
+import { cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 import { fetchQuotes } from './_quotes.js';
 
 const DEFAULT_APP_ID = 'portfolio-tracker-pro-v3';
@@ -36,7 +37,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const db = getFirestore();
+    const db = getDb();
     const userDoc = db
       .collection('artifacts').doc(process.env.PORTFOLIO_APP_ID || DEFAULT_APP_ID)
       .collection('users').doc(uid);
@@ -76,8 +77,10 @@ function secretsMatch(provided, expected) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-function getFirestore() {
-  if (!admin.apps.length) {
+// firebase-admin v13+ only exposes the modular API under ESM — the legacy
+// `admin.apps` / `admin.credential` namespace is undefined here.
+function getDb() {
+  if (!getApps().length) {
     const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
     if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT is not configured');
     const serviceAccount = JSON.parse(raw);
@@ -85,9 +88,9 @@ function getFirestore() {
     if (serviceAccount.private_key) {
       serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
     }
-    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    initializeApp({ credential: cert(serviceAccount) });
   }
-  return admin.firestore();
+  return getFirestore();
 }
 
 async function fetchUsdRate() {
