@@ -8,7 +8,8 @@ import {
   PieChart, X, Globe,
   ArrowRightLeft, Sparkles,
   TrendingUp, Edit2, Filter, LogOut, Copy, CheckCircle2, Settings,
-  Newspaper, PencilLine, Bell, AlertTriangle, Activity
+  Newspaper, PencilLine, Bell, AlertTriangle, Activity,
+  ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, Check
 } from 'lucide-react';
 
 // --- Firebase Configuration ---
@@ -25,6 +26,21 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'portfolio-tracker-pro-v3';
+
+// Sort field only — direction lives in its own toggle beside the menu
+const SORT_OPTIONS = [
+  { id: 'value', label: 'שווי' },
+  { id: 'total', label: 'תשואה כוללת' },
+  { id: 'daily', label: 'תשואה יומית' },
+  { id: 'alpha', label: 'סדר אלפביתי', short: 'א-ב' },
+  { id: 'sector', label: 'סקטור' },
+  { id: 'platform', label: 'פלטפורמה' },
+];
+const NO_FILTERS = { platforms: [], sectors: [], profitability: null };
+const TEXT_SORTS = ['alpha', 'sector', 'platform'];
+
+const PILL = { color: '#94a3b8', background: '#1e293b', border: '0.5px solid #334155', fontWeight: 400 };
+const PILL_ACTIVE = { color: '#3b82f6', background: '#1e3a5f', border: '0.5px solid #1e40af', fontWeight: 500 };
 
 const App = () => {
   const [user, setUser] = useState(null);
@@ -82,8 +98,13 @@ const App = () => {
   const [alertForm, setAlertForm] = useState({ symbol: '', type: 'below', targetPrice: '' });
 
   // Sorting State
-  const [sortBy, setSortBy] = useState('value-desc');
+  const [sortBy, setSortBy] = useState('value');
+  const [sortDir, setSortDir] = useState('desc');
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+
+  // Filtering State
+  const [filters, setFilters] = useState(NO_FILTERS);
+  const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
 
   const sectors = ['טכנולוגיה', 'שבבים', 'סייבר', 'פינטק', 'מדדים', 'קרנות סל', 'אגח', 'אנרגיה', 'צרכנות', 'תקשורת', 'דאטה סנטרים', 'ביומד', 'פיננסים', 'אחר'];
   const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
@@ -597,31 +618,85 @@ const App = () => {
 
   // Sorting Logic
   const sortedHoldings = useMemo(() => {
-    return [...holdings].sort((a, b) => {
-      const priceCalcA = a.currency === 'ILS' ? a.avgPrice / 100 : a.avgPrice;
-      const priceCalcB = b.currency === 'ILS' ? b.avgPrice / 100 : b.avgPrice;
-      const mDataA = marketData[a.symbol.trim().toUpperCase()] || { currentPrice: priceCalcA };
-      const mDataB = marketData[b.symbol.trim().toUpperCase()] || { currentPrice: priceCalcB };
-      const valueA_ILS = a.currency === 'ILS' ? (a.quantity * mDataA.currentPrice) : (a.quantity * mDataA.currentPrice * usdRate);
-      const valueB_ILS = b.currency === 'ILS' ? (b.quantity * mDataB.currentPrice) : (b.quantity * mDataB.currentPrice * usdRate);
-      const profitA = priceCalcA > 0 ? ((mDataA.currentPrice - priceCalcA) / priceCalcA) : 0;
-      const profitB = priceCalcB > 0 ? ((mDataB.currentPrice - priceCalcB) / priceCalcB) : 0;
+    const priceOf = (h) => (h.currency === 'ILS' ? h.avgPrice / 100 : h.avgPrice);
+    const quoteOf = (h) => marketData[h.symbol.trim().toUpperCase()] || { currentPrice: priceOf(h) };
+    const valueILS = (h) => {
+      const value = h.quantity * quoteOf(h).currentPrice;
+      return h.currency === 'ILS' ? value : value * usdRate;
+    };
+
+    // Text fields sort alphabetically; everything else numerically
+    const textOf = (h) => {
       switch (sortBy) {
-        case 'value-desc': return valueB_ILS - valueA_ILS;
-        case 'value-asc': return valueA_ILS - valueB_ILS;
-        case 'profit-desc': return profitB - profitA;
-        case 'daily-desc': {
-          // Sort by the same effective value shown on screen (0 when market closed)
-          const dailyA = dailyChangeState(mDataA) === 'live' ? (mDataA.dailyChangePct || 0) : 0;
-          const dailyB = dailyChangeState(mDataB) === 'live' ? (mDataB.dailyChangePct || 0) : 0;
-          return dailyB - dailyA;
-        }
-        case 'sector': return (a.sector || '').localeCompare(b.sector || '');
-        case 'platform': return (a.platform || '').localeCompare(b.platform || '');
-        default: return 0;
+        case 'alpha': return h.symbol || '';
+        case 'sector': return h.sector || '';
+        case 'platform': return h.platform || '';
+        default: return null;
       }
+    };
+    const numberOf = (h) => {
+      switch (sortBy) {
+        case 'total': {
+          const price = priceOf(h);
+          return price > 0 ? (quoteOf(h).currentPrice - price) / price : 0;
+        }
+        // The same effective value shown on screen (0 when market closed)
+        case 'daily': {
+          const mData = quoteOf(h);
+          return dailyChangeState(mData) === 'live' ? (mData.dailyChangePct || 0) : 0;
+        }
+        default: return valueILS(h);
+      }
+    };
+
+    const factor = sortDir === 'asc' ? 1 : -1;
+    return [...holdings].sort((a, b) => {
+      const textA = textOf(a);
+      if (textA !== null) {
+        const compared = textA.localeCompare(textOf(b));
+        // Within one sector/platform, keep the biggest holding first
+        return compared !== 0 ? compared * factor : valueILS(b) - valueILS(a);
+      }
+      return (numberOf(a) - numberOf(b)) * factor;
     });
-  }, [holdings, marketData, usdRate, sortBy]);
+  }, [holdings, marketData, usdRate, sortBy, sortDir]);
+
+  // Only platforms and sectors actually present in the portfolio are offered
+  const filterOptions = useMemo(() => {
+    const distinct = (key) => [...new Set(holdings.map(h => (h[key] || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+    return { platforms: distinct('platform'), sectors: distinct('sector') };
+  }, [holdings]);
+
+  const activeFilterCount =
+    filters.platforms.length + filters.sectors.length + (filters.profitability ? 1 : 0);
+
+  const visibleHoldings = useMemo(() => {
+    if (activeFilterCount === 0) return sortedHoldings;
+    return sortedHoldings.filter(h => {
+      if (filters.platforms.length && !filters.platforms.includes((h.platform || '').trim())) return false;
+      if (filters.sectors.length && !filters.sectors.includes((h.sector || '').trim())) return false;
+      if (filters.profitability) {
+        const price = h.currency === 'ILS' ? h.avgPrice / 100 : h.avgPrice;
+        const mData = marketData[h.symbol.trim().toUpperCase()] || { currentPrice: price };
+        // Break even counts as profitable, so every holding matches exactly one side
+        const isProfitable = mData.currentPrice >= price;
+        if (filters.profitability === 'profit' && !isProfitable) return false;
+        if (filters.profitability === 'loss' && isProfitable) return false;
+      }
+      return true;
+    });
+  }, [sortedHoldings, filters, activeFilterCount, marketData]);
+
+  const toggleFilterValue = (key, value) => setFilters(prev => ({
+    ...prev,
+    [key]: prev[key].includes(value) ? prev[key].filter(v => v !== value) : [...prev[key], value],
+  }));
+
+  const activeSort = SORT_OPTIONS.find(o => o.id === sortBy) || SORT_OPTIONS[0];
+  const sortDirLabel = TEXT_SORTS.includes(sortBy)
+    ? (sortDir === 'desc' ? 'ת-א' : 'א-ב')
+    : (sortDir === 'desc' ? 'מהגבוה לנמוך' : 'מהנמוך לגבוה');
 
   // 4. Generate AI Analysis Prompt
   const generateAiPrompt = () => {
@@ -1197,28 +1272,87 @@ const App = () => {
             {/* Holdings Header */}
             <div className="flex items-center justify-between px-1 pt-1">
               <h3 className="text-[13px]" style={{color:'#94a3b8', fontWeight:600, letterSpacing:'0.2px'}}>אחזקות</h3>
-              <div className="relative">
-                <button onClick={() => setIsSortMenuOpen(!isSortMenuOpen)} className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-full" style={{color:'#94a3b8', background:'#1e293b', border:'0.5px solid #334155', fontWeight:400}}>
-                  <Filter size={11} /><span>מיון</span>
+              {/* RTL order: filter sits rightmost, then the sort field, then direction */}
+              <div className="flex items-center gap-1.5">
+
+                <div className="relative">
+                  <button onClick={() => { setIsFilterMenuOpen(!isFilterMenuOpen); setIsSortMenuOpen(false); }}
+                    className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-full"
+                    style={activeFilterCount > 0 ? PILL_ACTIVE : PILL}>
+                    <SlidersHorizontal size={11} />
+                    <span>{activeFilterCount > 0 ? `סינון · ${activeFilterCount}` : 'סינון'}</span>
+                  </button>
+                  {isFilterMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setIsFilterMenuOpen(false)} />
+                      <div className="absolute left-0 top-full mt-2 w-56 rounded-xl z-20 py-1.5 max-h-[60vh] overflow-y-auto animate-in fade-in zoom-in-95" style={{background:'#1e293b', border:'0.5px solid #334155'}}>
+                        {[
+                          { key: 'profitability', title: 'רווחיות', items: [
+                            { value: 'profit', label: 'אחזקות רווחיות' },
+                            { value: 'loss', label: 'אחזקות לא רווחיות' },
+                          ] },
+                          { key: 'platforms', title: 'פלטפורמה', items: filterOptions.platforms.map(v => ({ value: v, label: v })) },
+                          { key: 'sectors', title: 'סקטור', items: filterOptions.sectors.map(v => ({ value: v, label: v })) },
+                        ].filter(group => group.items.length > 0).map(group => (
+                          <div key={group.key}>
+                            <p className="px-4 pt-2 pb-1 text-[9px] uppercase tracking-wider" style={{color:'#64748b', fontWeight:400}}>{group.title}</p>
+                            {group.items.map(item => {
+                              const isActive = group.key === 'profitability'
+                                ? filters.profitability === item.value
+                                : filters[group.key].includes(item.value);
+                              return (
+                                <button key={item.value}
+                                  onClick={() => group.key === 'profitability'
+                                    ? setFilters(prev => ({ ...prev, profitability: prev.profitability === item.value ? null : item.value }))
+                                    : toggleFilterValue(group.key, item.value)}
+                                  className="w-full flex items-center justify-between gap-2 px-4 py-2 text-[12px]"
+                                  style={{color: isActive ? '#3b82f6' : '#94a3b8', fontWeight: isActive ? 600 : 400}}>
+                                  <span className="truncate">{item.label}</span>
+                                  {isActive && <Check size={12} className="shrink-0" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ))}
+                        {activeFilterCount > 0 && (
+                          <div className="mt-1 pt-1" style={{borderTop:'0.5px solid #334155'}}>
+                            <button onClick={() => setFilters(NO_FILTERS)} className="w-full text-right px-4 py-2 text-[12px]" style={{color:'#ef4444', fontWeight:400}}>
+                              נקה סינון
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <button onClick={() => { setIsSortMenuOpen(!isSortMenuOpen); setIsFilterMenuOpen(false); }}
+                    className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-full" style={PILL}>
+                    <ArrowUpDown size={11} /><span>{activeSort.short || activeSort.label}</span>
+                  </button>
+                  {isSortMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setIsSortMenuOpen(false)} />
+                      <div className="absolute left-0 top-full mt-2 w-48 rounded-xl z-20 py-2 animate-in fade-in zoom-in-95" style={{background:'#1e293b', border:'0.5px solid #334155'}}>
+                        {SORT_OPTIONS.map(option => (
+                          <button key={option.id} onClick={() => { setSortBy(option.id); setIsSortMenuOpen(false); }}
+                            className="w-full flex items-center justify-between gap-2 px-4 py-2 text-[12px]"
+                            style={{color: sortBy === option.id ? '#3b82f6' : '#94a3b8', fontWeight: sortBy === option.id ? 600 : 400}}>
+                            <span>{option.label}</span>
+                            {sortBy === option.id && <Check size={12} className="shrink-0" />}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <button onClick={() => setSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
+                  className="flex items-center justify-center px-2 py-1.5 rounded-full"
+                  style={PILL} title={sortDirLabel} aria-label={sortDirLabel}>
+                  {sortDir === 'desc' ? <ArrowDown size={13} /> : <ArrowUp size={13} />}
                 </button>
-                {isSortMenuOpen && (
-                  <div className="absolute left-0 top-full mt-2 w-48 rounded-xl z-10 py-2 animate-in fade-in zoom-in-95" style={{background:'#1e293b', border:'0.5px solid #334155'}}>
-                    {[
-                      { id: 'value-desc', label: 'שווי: מהגבוה לנמוך' },
-                      { id: 'value-asc', label: 'שווי: מהנמוך לגבוה' },
-                      { id: 'profit-desc', label: 'רווחיות כוללת' },
-                      { id: 'daily-desc', label: 'רווחיות יומית' },
-                      { id: 'sector', label: 'לפי סקטור' },
-                      { id: 'platform', label: 'לפי פלטפורמה' }
-                    ].map(option => (
-                      <button key={option.id} onClick={() => { setSortBy(option.id); setIsSortMenuOpen(false); }}
-                        className="w-full text-right px-4 py-2 text-[12px]"
-                        style={{color: sortBy === option.id ? '#3b82f6' : '#94a3b8', fontWeight: sortBy === option.id ? 600 : 400}}>
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
 
@@ -1228,9 +1362,15 @@ const App = () => {
                 <p className="text-sm mb-4" style={{color:'#94a3b8'}}>התיק שלך עדיין ריק.</p>
                 <button onClick={() => setIsAdding(true)} className="px-6 py-2 rounded-full text-sm" style={{background:'#1e3a5f', color:'#3b82f6', fontWeight:500}}>הוסף נכס ראשון</button>
               </div>
+            ) : visibleHoldings.length === 0 ? (
+              <div className="rounded-[20px] p-8 text-center" style={{background:'#111827', border:'0.5px solid #1e293b'}}>
+                <Filter size={28} className="mx-auto mb-3" style={{color:'#64748b'}} />
+                <p className="text-sm mb-4" style={{color:'#94a3b8'}}>אין אחזקות שתואמות לסינון.</p>
+                <button onClick={() => setFilters(NO_FILTERS)} className="px-6 py-2 rounded-full text-sm" style={{background:'#1e3a5f', color:'#3b82f6', fontWeight:500}}>נקה סינון</button>
+              </div>
             ) : (
               <div className="rounded-[20px] overflow-hidden" style={{background:'#111827', border:'0.5px solid #1e293b'}}>
-                {sortedHoldings.map((h, idx) => {
+                {visibleHoldings.map((h, idx) => {
                   const priceForCalc = h.currency === 'ILS' ? h.avgPrice / 100 : h.avgPrice;
                   const mData = marketData[h.symbol.trim().toUpperCase()] || { currentPrice: priceForCalc, dailyChangePct: 0 };
                   const currentPrice = mData.currentPrice;
