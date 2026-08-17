@@ -17,6 +17,12 @@
 const ENDPOINT = 'https://portfolio-track-app.vercel.app/api/summary';
 const APP_URL = 'https://portfolio-track-app.vercel.app/';
 
+// A widget tap can only ever hand the URL to the default browser — iOS has no way
+// to launch the home-screen web app itself, so the browser gives you a logged-out,
+// non-standalone copy. Left off by default: tap the app's own icon instead.
+// Set to true to open the site in the default browser on tap.
+const TAP_OPENS_SITE = false;
+
 const KEYCHAIN_KEY = 'myWealthWidgetToken';
 const CACHE_FILE = 'mywealth-summary.json';
 const REFRESH_MINUTES = 15;
@@ -38,7 +44,7 @@ try {
   const token = await resolveToken();
   const { data, stale } = await loadSummary(token);
   const widget = isAccessory ? buildAccessoryWidget(data, stale) : buildHomeWidget(data, stale);
-  widget.url = APP_URL;
+  if (TAP_OPENS_SITE) widget.url = APP_URL;
   widget.refreshAfterDate = new Date(Date.now() + REFRESH_MINUTES * 60 * 1000);
 
   if (config.runsInWidget) Script.setWidget(widget);
