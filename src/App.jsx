@@ -9,7 +9,7 @@ import {
   ArrowRightLeft, Sparkles,
   TrendingUp, Edit2, Filter, LogOut, Copy, CheckCircle2, Settings,
   Newspaper, PencilLine, Bell, AlertTriangle, Activity,
-  ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, Check
+  ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, Check, Search
 } from 'lucide-react';
 
 // --- Firebase Configuration ---
@@ -37,6 +37,12 @@ const SORT_OPTIONS = [
   { id: 'platform', label: 'פלטפורמה' },
 ];
 const NO_FILTERS = { platforms: [], sectors: [], profitability: null };
+
+// Shape the add/edit form resets to — kept in one place so the defaults can't drift
+const BLANK_HOLDING_FORM = {
+  symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD',
+  sector: 'טכנולוגיה', platform: 'OneZero', note: '',
+};
 const TEXT_SORTS = ['alpha', 'sector', 'platform'];
 
 const PILL = { color: '#94a3b8', background: '#1e293b', border: '0.5px solid #334155', fontWeight: 400 };
@@ -71,9 +77,7 @@ const App = () => {
   const [isCopied, setIsCopied] = useState(false);
   const [error, setError] = useState(null);
 
-  const [formData, setFormData] = useState({
-    symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD', sector: 'טכנולוגיה', platform: 'IBI SMART', note: ''
-  });
+  const [formData, setFormData] = useState({ ...BLANK_HOLDING_FORM });
 
   // Manual price override for numeric ILS stocks
   const [manualPriceInput, setManualPriceInput] = useState('');
@@ -105,6 +109,7 @@ const App = () => {
   // Filtering State
   const [filters, setFilters] = useState(NO_FILTERS);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
+  const [search, setSearch] = useState('');
 
   const sectors = ['טכנולוגיה', 'שבבים', 'סייבר', 'פינטק', 'מדדים', 'קרנות סל', 'אגח', 'אנרגיה', 'צרכנות', 'תקשורת', 'דאטה סנטרים', 'ביומד', 'פיננסים', 'אחר'];
   const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
@@ -688,10 +693,24 @@ const App = () => {
     });
   }, [sortedHoldings, filters, activeFilterCount, marketData]);
 
+  // Free-text search runs after the filters, and stays out of activeFilterCount so
+  // the filter button's badge keeps counting only the filter menu's selections.
+  const searchedHoldings = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return visibleHoldings;
+    return visibleHoldings.filter(h =>
+      [h.symbol, h.note, h.sector, h.platform].some(field => (field || '').toLowerCase().includes(term)));
+  }, [visibleHoldings, search]);
+
   const toggleFilterValue = (key, value) => setFilters(prev => ({
     ...prev,
     [key]: prev[key].includes(value) ? prev[key].filter(v => v !== value) : [...prev[key], value],
   }));
+
+  const clearSearchAndFilters = () => { setSearch(''); setFilters(NO_FILTERS); };
+  const clearLabel = search.trim() && activeFilterCount > 0
+    ? 'נקה חיפוש וסינון'
+    : search.trim() ? 'נקה חיפוש' : 'נקה סינון';
 
   const activeSort = SORT_OPTIONS.find(o => o.id === sortBy) || SORT_OPTIONS[0];
   const sortDirLabel = TEXT_SORTS.includes(sortBy)
@@ -780,7 +799,7 @@ const App = () => {
         await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'holdings', crypto.randomUUID()), holdingData);
       }
       setIsAdding(false);
-      setFormData({ symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD', sector: 'טכנולוגיה', platform: 'IBI SMART', note: '' });
+      setFormData({ ...BLANK_HOLDING_FORM });
       setManualPriceInput('');
     } catch (err) { setError("שגיאה בשמירת הנכס"); }
   };
@@ -812,7 +831,7 @@ const App = () => {
     setIsAdding(false);
     setEditingId(null);
     setManualPriceInput('');
-    setFormData({ symbol: '', name: '', quantity: '', avgPrice: '', currency: 'USD', sector: 'טכנולוגיה', platform: 'IBI SMART', note: '' });
+    setFormData({ ...BLANK_HOLDING_FORM });
   };
 
   const renderDonutChart = () => {
@@ -1356,21 +1375,39 @@ const App = () => {
               </div>
             </div>
 
+            {holdings.length > 0 && (
+              <div className="relative">
+                <Search size={13} className="absolute top-1/2 -translate-y-1/2 right-3.5 pointer-events-none" style={{color:'#64748b'}} />
+                <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="חיפוש אחזקה"
+                  className="w-full text-[12px] rounded-full py-2 pr-9 pl-9 outline-none placeholder:text-[#64748b]"
+                  style={{background:'#111827', border:'0.5px solid #1e293b', color:'#cbd5e1'}} />
+                {search && (
+                  <button onClick={() => setSearch('')} aria-label="נקה חיפוש"
+                    className="absolute top-1/2 -translate-y-1/2 left-3" style={{color:'#64748b'}}>
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            )}
+
             {holdings.length === 0 ? (
               <div className="rounded-[20px] p-8 text-center" style={{background:'#111827', border:'0.5px solid #1e293b'}}>
                 <Briefcase size={32} className="mx-auto mb-3" style={{color:'#64748b'}} />
                 <p className="text-sm mb-4" style={{color:'#94a3b8'}}>התיק שלך עדיין ריק.</p>
                 <button onClick={() => setIsAdding(true)} className="px-6 py-2 rounded-full text-sm" style={{background:'#1e3a5f', color:'#3b82f6', fontWeight:500}}>הוסף נכס ראשון</button>
               </div>
-            ) : visibleHoldings.length === 0 ? (
+            ) : searchedHoldings.length === 0 ? (
               <div className="rounded-[20px] p-8 text-center" style={{background:'#111827', border:'0.5px solid #1e293b'}}>
                 <Filter size={28} className="mx-auto mb-3" style={{color:'#64748b'}} />
-                <p className="text-sm mb-4" style={{color:'#94a3b8'}}>אין אחזקות שתואמות לסינון.</p>
-                <button onClick={() => setFilters(NO_FILTERS)} className="px-6 py-2 rounded-full text-sm" style={{background:'#1e3a5f', color:'#3b82f6', fontWeight:500}}>נקה סינון</button>
+                <p className="text-sm mb-4" style={{color:'#94a3b8'}}>
+                  {search.trim() ? 'אין אחזקות שתואמות לחיפוש.' : 'אין אחזקות שתואמות לסינון.'}
+                </p>
+                <button onClick={clearSearchAndFilters} className="px-6 py-2 rounded-full text-sm" style={{background:'#1e3a5f', color:'#3b82f6', fontWeight:500}}>{clearLabel}</button>
               </div>
             ) : (
               <div className="rounded-[20px] overflow-hidden" style={{background:'#111827', border:'0.5px solid #1e293b'}}>
-                {visibleHoldings.map((h, idx) => {
+                {searchedHoldings.map((h, idx) => {
                   const priceForCalc = h.currency === 'ILS' ? h.avgPrice / 100 : h.avgPrice;
                   const mData = marketData[h.symbol.trim().toUpperCase()] || { currentPrice: priceForCalc, dailyChangePct: 0 };
                   const currentPrice = mData.currentPrice;
