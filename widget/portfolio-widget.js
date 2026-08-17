@@ -125,9 +125,8 @@ function readCache() {
 
 // --- rendering -------------------------------------------------------------
 
-// Hebrew labels sit on the right, figures on the left, and each KPI gets its own
-// two lines — on a small widget a label and its figure can't share one line
-// without the figure being truncated.
+// Header centred, then the two returns side by side — daily on the right, total on
+// the left — each as label / shekels / percent.
 function buildHomeWidget(data, stale) {
   const small = family === 'small';
   const widget = new ListWidget();
@@ -135,32 +134,44 @@ function buildHomeWidget(data, stale) {
   widget.setPadding(12, 12, 10, 12);
 
   addText(widget, 'שווי תיק נוכחי', {
-    align: 'right', font: Font.systemFont(9), color: COLORS.label,
+    align: 'center', font: Font.systemFont(small ? 9 : 10), color: COLORS.label,
   });
   addText(widget, shekels(data.totalILS), {
-    align: 'center', font: Font.boldSystemFont(small ? 19 : 26), color: COLORS.value, scale: 0.5,
+    align: 'center', font: Font.boldSystemFont(small ? 21 : 26), color: COLORS.value, scale: 0.5,
   });
   addText(widget, `$${round(data.totalUSD)}`, {
-    align: 'center', font: Font.systemFont(10), color: COLORS.muted, scale: 0.7,
+    align: 'center', font: Font.systemFont(small ? 10 : 11), color: COLORS.muted, scale: 0.7,
   });
 
-  widget.addSpacer(small ? 5 : 10);
-  addKpi(widget, 'שינוי יומי', data.dailyChangeILS, data.dailyChangePct);
-  widget.addSpacer(small ? 3 : 8);
-  addKpi(widget, 'תשואה כוללת', data.totalChangeILS, data.totalChangePct);
-  widget.addSpacer(small ? 5 : 10);
+  widget.addSpacer(small ? 8 : 12);
+
+  // A horizontal stack lays its children out left to right, so the daily column is
+  // added second to land on the right. Each column carries its own spacer, which
+  // splits the width evenly between them.
+  const columns = widget.addStack();
+  columns.layoutHorizontally();
+  addKpiColumn(columns, 'תשואה כוללת', data.totalChangeILS, data.totalChangePct, 'left');
+  addKpiColumn(columns, 'תשואה יומית', data.dailyChangeILS, data.dailyChangePct, 'right');
+
+  widget.addSpacer(small ? 8 : 12);
 
   addFooter(widget, data, stale);
   return widget;
 }
 
-function addKpi(widget, label, amount, percent) {
-  addText(widget, label, { align: 'right', font: Font.systemFont(9), color: COLORS.label });
-  addText(widget, signed(amount, percent), {
-    align: 'left',
-    font: Font.semiboldSystemFont(family === 'small' ? 12 : 15),
-    color: amount >= 0 ? COLORS.up : COLORS.down,
-    scale: 0.6,
+function addKpiColumn(row, label, amount, percent, align) {
+  const small = family === 'small';
+  const color = amount >= 0 ? COLORS.up : COLORS.down;
+
+  const column = row.addStack();
+  column.layoutVertically();
+
+  addText(column, label, { align, font: Font.systemFont(small ? 9 : 10), color: COLORS.label });
+  addText(column, shekels(Math.abs(amount), amount >= 0 ? '+' : '−'), {
+    align, font: Font.semiboldSystemFont(small ? 13 : 16), color, scale: 0.6,
+  });
+  addText(column, pct(percent), {
+    align, font: Font.systemFont(small ? 10 : 12), color, scale: 0.7,
   });
 }
 
