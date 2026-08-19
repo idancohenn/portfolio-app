@@ -54,9 +54,11 @@ export default async function handler(req, res) {
     const { marketData, failures } = await loadPrices(holdings, cached);
     const stats = computeStats(holdings, marketData, usdRate);
 
-    // Widget refreshes are throttled by iOS anyway; a short edge cache keeps
-    // repeated taps from re-scraping the upstream price sources.
-    res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
+    // Short edge cache keeps repeated taps from re-scraping the upstream price
+    // sources. max-age=0 keeps it out of the phone's own URL cache — without it
+    // the response has no client freshness lifetime, so iOS is free to cache it
+    // heuristically and hand the widget numbers older than the refresh itself.
+    res.setHeader('Cache-Control', 's-maxage=60, max-age=0, must-revalidate');
 
     return res.status(200).json({
       ...stats,

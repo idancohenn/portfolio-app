@@ -85,7 +85,10 @@ async function resolveToken() {
 // keeps showing numbers when the network or the endpoint is unavailable.
 async function loadSummary(token) {
   try {
-    const request = new Request(`${ENDPOINT}?key=${encodeURIComponent(token)}`);
+    // Bucketed to the minute so each refresh asks for a URL the phone has not
+    // cached, while rapid repeat calls still land on the edge cache.
+    const bucket = Math.floor(Date.now() / 60000);
+    const request = new Request(`${ENDPOINT}?key=${encodeURIComponent(token)}&t=${bucket}`);
     request.timeoutInterval = 20;
     const data = await request.loadJSON();
     if (typeof data?.totalILS !== 'number') throw new Error(data?.error || 'Bad response');
