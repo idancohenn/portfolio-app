@@ -102,7 +102,7 @@ const App = () => {
   const [alertForm, setAlertForm] = useState({ symbol: '', type: 'below', targetPrice: '' });
 
   // Sorting State
-  const [sortBy, setSortBy] = useState('value');
+  const [sortBy, setSortBy] = useState('daily');
   const [sortDir, setSortDir] = useState('desc');
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
 
