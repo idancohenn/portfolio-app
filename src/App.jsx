@@ -1526,32 +1526,28 @@ const App = () => {
           <div className="space-y-4 animate-in fade-in duration-300">
             <h2 className="text-xl font-black text-white mb-2">תובנות ופילוחים</h2>
             
-            {/* Performance Chart */}
-            <PerformanceChart />
-            
-            {/* TWR/IRR Stats */}
-            {advancedStats && (
-              <div className="bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
-                <h3 className="font-bold text-slate-600 mb-3 text-sm">תשואה מתקדמת</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-50 rounded-xl p-3">
-                    <div className="text-[10px] text-slate-500 mb-1">תשואה שנתית (IRR)</div>
-                    <div className="text-lg font-black" style={{color: advancedStats.irr >= 0 ? '#22c55e' : '#ef4444'}}>
-                      {advancedStats.irr >= 0 ? '+' : ''}{advancedStats.irr.toFixed(1)}%
-                    </div>
+            {/* Geographic Exposure */}
+            <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-100">
+              <h3 className="font-bold text-slate-600 mb-4 flex items-center gap-2"><Globe size={18} /> חשיפה גיאוגרפית</h3>
+              <div className="h-4 w-full flex rounded-full overflow-hidden mb-4 shadow-inner bg-slate-100">
+                <div style={{ width: `${stats.geoForeign}%` }} className="bg-blue-500 h-full transition-all"></div>
+                <div style={{ width: `${stats.geoLocal}%` }} className="bg-orange-400 h-full transition-all"></div>
+              </div>
+              <div className="flex justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-bold text-slate-800 mb-1">
+                    <div className="w-2 h-2 rounded-full bg-blue-500"></div> מניות חו"ל
                   </div>
-                  <div className="bg-slate-50 rounded-xl p-3">
-                    <div className="text-[10px] text-slate-500 mb-1">תשואה כוללת ({advancedStats.days} ימים)</div>
-                    <div className="text-lg font-black" style={{color: advancedStats.twr >= 0 ? '#22c55e' : '#ef4444'}}>
-                      {advancedStats.twr >= 0 ? '+' : ''}{advancedStats.twr.toFixed(1)}%
-                    </div>
+                  <p className="text-xs text-slate-500">{stats.geoForeign.toFixed(1)}% מבוסס מט"ח</p>
+                </div>
+                <div className="text-left">
+                  <div className="flex items-center justify-end gap-2 text-sm font-bold text-slate-800 mb-1">
+                    ישראל <div className="w-2 h-2 rounded-full bg-orange-400"></div>
                   </div>
+                  <p className="text-xs text-slate-500">{stats.geoLocal.toFixed(1)}% מבוסס שקלי</p>
                 </div>
               </div>
-            )}
-            
-            {/* Correlation Heatmap */}
-            <CorrelationHeatmap />
+            </div>
             
             {/* Sector Donut */}
             <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-100">
@@ -1584,28 +1580,32 @@ const App = () => {
               )}
             </div>
             
-            {/* Geographic Exposure */}
-            <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-100">
-              <h3 className="font-bold text-slate-600 mb-4 flex items-center gap-2"><Globe size={18} /> חשיפה גיאוגרפית</h3>
-              <div className="h-4 w-full flex rounded-full overflow-hidden mb-4 shadow-inner bg-slate-100">
-                <div style={{ width: `${stats.geoForeign}%` }} className="bg-blue-500 h-full transition-all"></div>
-                <div style={{ width: `${stats.geoLocal}%` }} className="bg-orange-400 h-full transition-all"></div>
-              </div>
-              <div className="flex justify-between">
-                <div>
-                  <div className="flex items-center gap-2 text-sm font-bold text-slate-800 mb-1">
-                    <div className="w-2 h-2 rounded-full bg-blue-500"></div> מניות חו"ל
+            {/* Performance Chart */}
+            <PerformanceChart />
+            
+            {/* TWR/IRR Stats */}
+            {advancedStats && (
+              <div className="bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
+                <h3 className="font-bold text-slate-600 mb-3 text-sm">תשואה מתקדמת</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-slate-50 rounded-xl p-3">
+                    <div className="text-[10px] text-slate-500 mb-1">תשואה שנתית (IRR)</div>
+                    <div className="text-lg font-black" style={{color: advancedStats.irr >= 0 ? '#22c55e' : '#ef4444'}}>
+                      {advancedStats.irr >= 0 ? '+' : ''}{advancedStats.irr.toFixed(1)}%
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-500">{stats.geoForeign.toFixed(1)}% מבוסס מט"ח</p>
-                </div>
-                <div className="text-left">
-                  <div className="flex items-center justify-end gap-2 text-sm font-bold text-slate-800 mb-1">
-                    ישראל <div className="w-2 h-2 rounded-full bg-orange-400"></div>
+                  <div className="bg-slate-50 rounded-xl p-3">
+                    <div className="text-[10px] text-slate-500 mb-1">תשואה כוללת ({advancedStats.days} ימים)</div>
+                    <div className="text-lg font-black" style={{color: advancedStats.twr >= 0 ? '#22c55e' : '#ef4444'}}>
+                      {advancedStats.twr >= 0 ? '+' : ''}{advancedStats.twr.toFixed(1)}%
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-500">{stats.geoLocal.toFixed(1)}% מבוסס שקלי</p>
                 </div>
               </div>
-            </div>
+            )}
+            
+            {/* Correlation Heatmap */}
+            <CorrelationHeatmap />
           </div>
         )}
 
